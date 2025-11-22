@@ -15,7 +15,7 @@ struct device{
 };
 struct model{
     std::string name;
-    std::string type; // NMOS, PMOS, BJT, etc.
+    //std::string type; // NMOS, PMOS, BJT, etc.
     std::map<std::string, double> parameters;
 };
 struct analysis{
