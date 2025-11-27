@@ -23,7 +23,22 @@ int main() {
     }
 
     cout << "\n========== Devices ==========\n";
-    for (auto &d : ckt.devices) {
+    for (auto &d : ckt.liner_devices) {
+        cout << "Device: " << d.name << "  Type: " << d.type << "\n";
+        cout << "  Nodes: ";
+        for (auto &n : d.node_names) cout << n << " ";
+        cout << "\n  Node IDs: ";
+        for (auto &id : d.nodes) cout << id << " ";
+        cout << "\n  Parameters:\n";
+        for (auto &kv : d.parameters) {
+            cout << "    " << kv.first << " = " << kv.second << "\n";
+        }
+        if (!d.model.empty()) {
+            cout << "  Model: " << d.model << "\n";
+        }
+        cout << "  Raw line: " << d.rawline << "\n\n";
+    }
+    for (auto &d : ckt.nonliner_devices) {
         cout << "Device: " << d.name << "  Type: " << d.type << "\n";
         cout << "  Nodes: ";
         for (auto &n : d.node_names) cout << n << " ";
@@ -50,7 +65,7 @@ int main() {
 
     cout << "========== Summary ==========\n";
     cout << "Total nodes: " << ckt.node_map.size() << "\n";
-    cout << "Total devices: " << ckt.devices.size() << "\n";
+    cout << "Total devices: " << ckt.liner_devices.size() + ckt.nonliner_devices.size() << "\n";
     cout << "Total models: " << ckt.models.size() << "\n";
 
     return 0;

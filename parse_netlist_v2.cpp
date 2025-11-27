@@ -2,7 +2,8 @@
 #include <fstream>
 #include <sstream>
 #include <algorithm>
-#include "circuit.hpp"
+#include <memory>
+#include "circuit_v2.hpp"
 
 // 去除前后空格
 static inline std::string trim(const std::string& s) {
@@ -49,45 +50,48 @@ static void parseModelLine(const std::string& line, circuit& ckt) {
 // 解析器件（R, C, L, V, I, M）
 static void parseDeviceLine(const std::string& line, circuit& ckt) {
     std::istringstream iss(line);
-    device dev;
-    dev.rawline = line;
-
-    iss >> dev.name;
-    char c = toupper(dev.name[0]);
+    //device dev;
+    //dev.rawline = line;
+    std::string name;
+    iss >> name;
+    char c = toupper(name[0]);
 
     /** -------------------------
      *  R, C, L
      *  ------------------------- */
     if (c=='R' || c=='C' || c=='L') {
-        dev.type = std::string(1, c);
+        std::string type = std::string(1, c);
         std::string n1, n2;
         double val;
         iss >> n1 >> n2 >> val;
-
-        dev.node_names = {n1, n2};
-        dev.nodes = { ckt.getNodeID(n1), ckt.getNodeID(n2) };
-        dev.parameters["value"] = val;
+        auto dev = std::make_unique<RCL>(name, type,
+                                        std::vector<std::string>{n1, n2},
+                                        std::vector<int>{ckt.getNodeID(n1), ckt.getNodeID(n2)},
+                                        val);
+        // dev.node_names = {n1, n2};
+        // dev.nodes = { ckt.getNodeID(n1), ckt.getNodeID(n2) };
+        // dev.parameters["value"] = val;
     }
 
     /** -------------------------
      *  V, I
      *  ------------------------- */
     else if (c=='V' || c=='I') {
-        dev.type = std::string(1, c);
+        std::string type = std::string(1, c);
 
         std::string n1, n2;
         iss >> n1 >> n2;
-        dev.node_names = {n1, n2};
-        dev.nodes = { ckt.getNodeID(n1), ckt.getNodeID(n2) };
+        // dev.node_names = {n1, n2};
+        // dev.nodes = { ckt.getNodeID(n1), ckt.getNodeID(n2) };
 
         std::string form;
         if (!(iss >> form)) {
-            dev.type += "_DC"; // 默认直流
+            type += "_DC"; // 默认直流
         }
         else if (form == "DC") {
             double v;
             iss >> v;
-            dev.type += "_DC";
+            type += "_DC";
             dev.parameters["DC"] = v;
         }
         else if (form == "SIN") {
@@ -145,12 +149,7 @@ static void parseDeviceLine(const std::string& line, circuit& ckt) {
         dev.type = "UNKNOWN";
     }
 
-    if (dev.type == "MOS") {
-        ckt.nonliner_devices.push_back(dev);
-    } else {
-        ckt.liner_devices.push_back(dev);
-    }
-    //ckt.devices.push_back(dev);
+    ckt.devices.push_back(dev);
 }
 
 // 解析分析语句
