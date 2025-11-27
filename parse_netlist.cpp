@@ -146,9 +146,11 @@ static void parseDeviceLine(const std::string& line, circuit& ckt) {
     }
 
     if (dev.type == "MOS") {
-        ckt.nonliner_devices.push_back(dev);
+        ckt.nonlinear_devices.push_back(dev);
+    } else if (c == 'V' || c == 'I') {
+        ckt.sources.push_back(dev);
     } else {
-        ckt.liner_devices.push_back(dev);
+        ckt.linear_devices.push_back(dev);
     }
     //ckt.devices.push_back(dev);
 }
@@ -197,6 +199,8 @@ void parseNetlistFile(const std::string& filename,
     }
 
     std::string line;
+
+    ckt.getNodeID("0"); //确保节点0存在
 
     while (std::getline(fin, line)) {
         line = trim(line);

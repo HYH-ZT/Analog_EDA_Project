@@ -1,47 +1,47 @@
-#pragma once
-#include <vector>
-#include <string>
-#include <unordered_map>
-#include <map>
+// #pragma once
+// #include <vector>
+// #include <string>
+// #include <unordered_map>
+// #include <map>
 
-struct device{
-    std::string name;
-    std::string type;   // R, C, L, V, I, etc.
-    std::vector<std::string> node_names; //节点名称列表
-    std::vector<int> nodes; //对于MOS管，nodes[0]:drain, nodes[1]:gate, nodes[2]:source, nodes[3]:bulk（我们估计用不到3）
-    // std::map<std::string, double> parameters;
-    // std::string model; //对于有模型的器件，比如MOS管
-    std::string rawline; //原始输入行
-};
-struct RCL : public device {
-    double value;
-    RCL(const std::string &name, const std::string &type,
-        const std::vector<std::string> &node_names,
-        const std::vector<int> &nodes,
-        double val)
-    {
-        this->name = name;
-        this->type = type;
-        this->node_names = node_names;
-        this->nodes = nodes;
-        this->value = val;
-    }
-};
-struct model{
-    std::string name;
-    //std::string type; // NMOS, PMOS, BJT, etc.
-    std::map<std::string, double> parameters;
-};
-struct analysis{
-    std::string type; // DC, AC, TRAN, etc.
-    std::map<std::string, double> parameters;
-};
-struct circuit
-{
-    std::unordered_map<std::string, int> node_map; //把节点名跟节点编号对应起来
-    std::vector<std::string> node_list;
-    std::vector<device> devices;
-    std::vector<model> models;
+// struct device{
+//     std::string name;
+//     std::string type;   // R, C, L, V, I, etc.
+//     std::vector<std::string> node_names; //节点名称列表
+//     std::vector<int> nodes; //对于MOS管，nodes[0]:drain, nodes[1]:gate, nodes[2]:source, nodes[3]:bulk（我们估计用不到3）
+//     // std::map<std::string, double> parameters;
+//     // std::string model; //对于有模型的器件，比如MOS管
+//     std::string rawline; //原始输入行
+// };
+// struct RCL : public device {
+//     double value;
+//     RCL(const std::string &name, const std::string &type,
+//         const std::vector<std::string> &node_names,
+//         const std::vector<int> &nodes,
+//         double val)
+//     {
+//         this->name = name;
+//         this->type = type;
+//         this->node_names = node_names;
+//         this->nodes = nodes;
+//         this->value = val;
+//     }
+// };
+// struct model{
+//     std::string name;
+//     //std::string type; // NMOS, PMOS, BJT, etc.
+//     std::map<std::string, double> parameters;
+// };
+// struct analysis{
+//     std::string type; // DC, AC, TRAN, etc.
+//     std::map<std::string, double> parameters;
+// };
+// struct circuit
+// {
+//     std::unordered_map<std::string, int> node_map; //把节点名跟节点编号对应起来
+//     std::vector<std::string> node_list;
+//     std::vector<device> devices;
+//     std::vector<model> models;
 
-    int getNodeID(const std::string &name); //根据节点名获取节点编号
-};
+//     int getNodeID(const std::string &name); //根据节点名获取节点编号
+// };

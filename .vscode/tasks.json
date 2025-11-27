@@ -9,7 +9,18 @@
                 "-g",
                 "*.cpp",
                 "-o",
-                "${fileDirname}\\${fileBasenameNoExtension}.exe"
+                "${fileDirname}\\${fileBasenameNoExtension}.exe",
+                "-I",
+                "F:\\Code\\Cpp\\EDA_Project\\Env\\eigen-5.0.0",
+                "-I",
+                "F:\\Code\\Cpp\\EDA_Project\\Env\\matplotlib-cpp",
+                "-I",
+                "C:\\Users\\hyh91\\AppData\\Local\\Programs\\Python\\Python313\\include",
+                "-I",
+                "C:\\Users\\hyh91\\AppData\\Local\\Programs\\Python\\Python313\\Lib\\site-packages\\numpy\\_core\\include",
+                "-L",
+                "C:\\Users\\hyh91\\AppData\\Local\\Programs\\Python\\Python313\\libs",
+                "-lpython313"
             ],
             "options": {
                 "cwd": "${fileDirname}"
