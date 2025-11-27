@@ -8,12 +8,29 @@ class solver {
         circuit ckt;
         analysis analysis_type;
         Eigen::VectorXd J; //电流源向量
+        //经过主元置换后的J向量
+        Eigen::VectorXd J_permuted;
         //线性MNA矩阵
         Eigen::MatrixXd liner_Y;
+        //LU分解矩阵
+        Eigen::MatrixXd L;
+        Eigen::MatrixXd U;
         //最终MNA矩阵
         Eigen::MatrixXd MNA_Y;
         //各节点电压
         std::vector<double> node_voltages;
+        //支路电流（用于电压源等）
+        std::vector<double> branch_currents;
+        //高斯消去法线性MNA方程求解
+        void solve_linear_MNA_Gauss();
+        //库函数LU分解法求解MNA方程
+        void solve_linear_MNA_LU();
+        //手动得到LU分解矩阵
+        void get_linear_MNA_LU_manual();
+        //使用已计算的L和U矩阵求解方程
+        void solve_with_LU_matrices();
+        //Gauss-Jacobi迭代法求解线性MNA方程
+        void solve_linear_MNA_Gauss_Jacobi();
     public:
         solver(circuit& ckt_, analysis& analysis_);
         //直流分析

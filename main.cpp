@@ -4,6 +4,7 @@
 #include <vector>
 #include "circuit.hpp"   // 包含 circuit/device/model 定义
 #include "parse_netlist.hpp"
+#include "solver.hpp"
 
 using namespace std;
 
@@ -14,7 +15,7 @@ int main() {
     vector<analysis> analyses;
 
     // ---- 3. 调用你的解析器 ----
-    parseNetlistFile("buffer.sp", ckt, analyses);
+    parseNetlistFile("resistor_net.sp", ckt, analyses);
     // ---- 4. 输出解析结果用于检查 ----
     
     cout << "========== Node Mapping ==========\n";
@@ -67,6 +68,15 @@ int main() {
     cout << "Total nodes: " << ckt.node_map.size() << "\n";
     cout << "Total devices: " << ckt.linear_devices.size() + ckt.nonlinear_devices.size() << "\n";
     cout << "Total models: " << ckt.models.size() << "\n";
+
+    // ---- 5. 调用求解器进行分析 ----
+    for (auto &analysis_type : analyses) {
+        solver s(ckt, analysis_type);
+        if (analysis_type.type == "DC") {
+            s.DC_solve();
+        }
+        // 可以添加对其他分析类型的支持
+    }
 
     return 0;
 }
