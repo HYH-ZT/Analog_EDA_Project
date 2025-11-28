@@ -21,6 +21,13 @@ class solver {
         std::vector<double> node_voltages;
         //支路电流（用于电压源等）
         std::vector<double> branch_currents;
+        //构建线性MNA矩阵和J向量
+        void build_linear_MNA();
+        //非线性器件的处理
+        void build_nonlinear_MNA();
+        //电源的处理
+        void build_sources_MNA();
+
         //高斯消去法线性MNA方程求解
         void solve_linear_MNA_Gauss();
         //库函数LU分解法求解MNA方程

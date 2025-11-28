@@ -32,4 +32,5 @@ struct circuit
     std::vector<model> models;
 
     int getNodeID(const std::string &name); //根据节点名获取节点编号
+    const model* findModelConst(const std::string& modelName);
 };

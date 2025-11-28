@@ -113,19 +113,19 @@ static void parseDeviceLine(const std::string& line, circuit& ckt) {
     else if (c=='M') {
         dev.type = "MOS";
 
-        std::string D, G, S;
+        std::string T1, G, T2;
         std::string modelName;
         std::string channelType;
 
         double W, L;
 
-        iss >> D >> G >> S >> channelType >> W >> L >> modelName;
+        iss >> T1 >> G >> T2 >> channelType >> W >> L >> modelName;
 
-        dev.node_names = {D, G, S};
+        dev.node_names = {T1, G, T2};
         dev.nodes = {
-            ckt.getNodeID(D),
+            ckt.getNodeID(T1),
             ckt.getNodeID(G),
-            ckt.getNodeID(S)
+            ckt.getNodeID(T2)
         };
 
         dev.model = modelName;

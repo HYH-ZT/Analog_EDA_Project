@@ -1,4 +1,5 @@
 #include "circuit.hpp"
+#include <vector>
 #include <string>
 using namespace std;
 // int circuit::getNodeID(const string &name) {
@@ -28,4 +29,10 @@ int circuit::getNodeID(const std::string &name) {
     node_list.push_back(name);
     node_map[name] = newID;
     return newID;
+}
+const model* circuit::findModelConst(const std::string& modelName) {
+    for (const auto &m : models) {
+        if (m.name == modelName) return &m;
+    }
+    return nullptr;
 }

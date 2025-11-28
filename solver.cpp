@@ -312,10 +312,8 @@ void solver::solve_linear_MNA_Gauss_Jacobi(){
     }
 }
 
-
-//直流分析
-void solver::DC_solve(){
-    //构建直流MNA矩阵
+void solver::build_linear_MNA(){
+    //构建线性MNA矩阵liner_Y和电流源向量J
     //构建线性器件的MNA矩阵
     for (auto &dev : ckt.linear_devices){
         char c = toupper(dev.name[0]);
@@ -349,39 +347,170 @@ void solver::DC_solve(){
             ckt.sources.push_back(source);
         }
     }
+}
+
+void solver::build_nonlinear_MNA() {
+    // 假设 MNA_Y 已经被初始化为 liner_Y 的副本（见你 DC_solve 片段）
+    // 假设 J 已预先被清零并且大小等于节点数（node_count）
+    // node_voltages 存的是上一次迭代的节点电压，索引对应节点编号-1，节点0(ground)不在该向量中
+
+    const double gmin = 1e-12; // cutoff 时的小导纳容错
+    int nodeCount = (int)ckt.node_list.size() - 1; // node_list 含地吗？根据你的mapping调整
+    // 注意：如果 node_voltages 的长度不同，请确保索引安全
+    // 对每一个 MOS 器件做线性化并 stamp
+    for (const auto &dev : ckt.nonlinear_devices) {
+        if (dev.type != "MOS") continue;
+
+        // 节点编号（你的 parse 保证 nodes 顺序：0: T1, 1: G, 2: T2）
+        int n1= dev.nodes.size() > 0 ? dev.nodes[0] : 0;
+        int ng = dev.nodes.size() > 1 ? dev.nodes[1] : 0;
+        int n2 = dev.nodes.size() > 2 ? dev.nodes[2] : 0;
+
+        // 读取几何与类型
+        double W = dev.parameters.count("W") ? dev.parameters.at("W") : 1e-6;
+        double L = dev.parameters.count("L") ? dev.parameters.at("L") : 1e-6;
+        double type = dev.parameters.count("TYPE") ? dev.parameters.at("TYPE") : 1.0; // 1: n, -1: p
+
+        // 找到 model 并读取参数（KP, VTO, LAMBDA）
+        const model* pmodel = ckt.findModelConst(dev.model);
+        double KP = 1e-4;    // 默认值μCox（你可按需要改）
+        double VTO = 1.0;    // 默认阈值
+        double LAMBDA = 0.0; // channel-length modulation
+        if (pmodel) {
+            if (pmodel->parameters.count("KP")) KP = pmodel->parameters.at("KP");
+            if (pmodel->parameters.count("VTO")) VTO = pmodel->parameters.at("VTO");
+            if (pmodel->parameters.count("LAMBDA")) LAMBDA = pmodel->parameters.at("LAMBDA");
+        }
+
+        // beta = KP * (W / L)
+        double beta = KP * (W / L);
+
+        // 取得上一次迭代的节点电压（若为地，视为0）
+        auto V_of = [&](int node)->double {
+            if (node == 0) return 0.0;
+            int idx = node - 1;
+            if (idx < 0 || idx >= (int)node_voltages.size()) return 0.0;
+            return node_voltages[idx];
+        };
+
+        double V1 = V_of(n1);
+        double Vg0 = V_of(ng);
+        double V2 = V_of(n2);
+        //根据电压高低确定 Drain 和 Source
+        int nd, ns;
+        double Vd0, Vs0;
+
+        if (V1 > V2) {
+            nd = n1;  Vd0 = V1;
+            ns = n2; Vs0 = V2;
+        } else {
+            nd = n2;  Vd0 = V2;
+            ns = n1; Vs0 = V1;
+        }
+
+        // 对于 PMOS，把电压和阈值变换为针对模型的常用形式
+        // 这里我们通过 TYPE 字段处理：如果 TYPE==-1（p），把电压极性翻转
+        double sign = type; // n: +1, p: -1
+        double Vgs = sign * (Vg0 - Vs0);
+        double Vds = sign * (Vd0 - Vs0);
+        double Vth = VTO; // 参考极性已由 sign 处理
+
+        // 计算 Id0, gm, gds
+        double Id0 = 0.0;
+        double gm = 0.0;
+        double gds = 0.0;
+
+        if (Vgs <= Vth) {
+            // cutoff
+            Id0 = 0.0;
+            gm = 0.0;
+            gds = gmin;
+        } else {
+            // 依据 Vds 与 Vgs-Vth 判定工作区
+            double Vov = Vgs - Vth; // overdrive
+            if (Vds < Vov) {
+                // 线性区 (triode)
+                // Id = beta * ( (Vov)*Vds - 0.5*Vds^2 ) * (1 + lambda*Vds)
+                double Id_no_lambda = beta * (Vov * Vds - 0.5 * Vds * Vds);
+                Id0 = Id_no_lambda * (1.0 + LAMBDA * Vds);
+                // 导数计算
+                // gm = ∂Id/∂Vg = beta * Vds * (1 + lambda*Vds)
+                gm = beta * Vds * (1.0 + LAMBDA * Vds);
+                // gds = ∂Id/∂Vd = beta * (Vov - Vds) * (1 + lambda*Vds) + Id_no_lambda * lambda
+                gds = beta * (Vov - Vds) * (1.0 + LAMBDA * Vds) + Id_no_lambda * LAMBDA;
+                if (gds < gmin) gds = gmin;
+            } else {
+                // 饱和区 (saturation)
+                // Id = 0.5 * beta * Vov^2 * (1 + lambda*Vds)
+                double Id_no_lambda = 0.5 * beta * Vov * Vov;
+                Id0 = Id_no_lambda * (1.0 + LAMBDA * Vds);
+                // gm = ∂Id/∂Vg = beta * Vov * (1 + lambda*Vds)
+                gm = beta * Vov * (1.0 + LAMBDA * Vds);
+                // gds = ∂Id/∂Vd = Id_no_lambda * lambda
+                gds = Id_no_lambda * LAMBDA;
+                if (gds < gmin) gds = gmin;
+            }
+        }
+
+        // 对 PMOS，我们计算的 Id0/gm/gds 是基于 sign * voltages 的正向定义。
+        // 物理上上述 Id0 表示从 drain -> source（按 sign 方向）。 为简化，我们保持 Id0 表示流出 drain 到 source（即 drain→source）。
+        // 若 TYPE==-1（p），sign=-1 已经在 Vgs/Vds 中处理好，Id0 的符号应是正确的。
+
+        // 现在构造线性方程：小信号 i ≈ gds*(vd - vs) + gm*(vg - vs) + Iconst
+        // 求常量 Iconst 使在工作点成立：
+        // Iconst = Id0 - gds*Vd0 - gm*Vg0 + (gds+gm)*Vs0
+        double Iconst = Id0 - gds * Vd0 - gm * Vg0 + (gds + gm) * Vs0;
+
+        // --- 把 gm, gds, Iconst stamp 进 MNA_Y 和 J ---
+        // 注意：节点编号为 0 表示地。MNA_Y 行列对应节点编号 1..N -> 索引 0..N-1
+        auto addToY = [&](int rowNode, int colNode, double val) {
+            if (rowNode == 0 || colNode == 0) return;
+            int r = rowNode - 1;
+            int c = colNode - 1;
+            MNA_Y(r, c) += val;
+        };
+        auto addToJ = [&](int node, double val) {
+            if (node == 0) return;
+            int idx = node - 1;
+            J(idx) += val;
+        };
+
+        // Drain row/col
+        // row d: +gds at (d,d); +gm at (d,g); -(gds+gm) at (d,s)
+        if (nd != 0) addToY(nd, nd, gds);
+        if (ng != 0) addToY(nd, ng, gm);
+        if (ns != 0) addToY(nd, ns, -(gds + gm));
+
+        // Source row/col
+        // row s: -gds at (s,d); -gm at (s,g); +(gds+gm) at (s,s)
+        if (ns != 0) addToY(ns, ns, (gds + gm));
+        if (nd != 0) addToY(ns, nd, -gds);
+        if (ng != 0) addToY(ns, ng, -gm);
+
+        // Gate 列：我们已经在 (d,g) 和 (s,g) 加了非对角项。Gate 自身对角不增加导纳（理想 MOS gate 无直流电流）
+        // 如果 nd/ns/ng 中有 ground(0)，上面对地的 addToY 会被忽略 —— 但要把等效电流接回地
+
+        // 把等效常数电流 Iconst 当作从 drain -> source 的独立电流源来处理：
+        // 我们采用约定：J 向量表示注入到节点（positive into node）。
+        // 对于一个从 drain 流向 source 的电流 Iconst：
+        //   在 drain 节点的注入量应减少 Iconst（因为电流离开 drain），所以 J[d] -= Iconst
+        //   在 source 节点的注入量应增加 Iconst（因为电流流入 source），所以 J[s] += Iconst
+        if (nd != 0) addToJ(nd, -Iconst);
+        if (ns != 0) addToJ(ns, +Iconst);
+
+        // 备注：如果需要考虑 body/bulk (第四个节点)，可以在此加入 body effect （影响 Vth）或把 body 当成源处理。
+    } // end for each MOS
+}
+
+//直流分析
+void solver::DC_solve(){
+    //构建直流MNA矩阵
+    build_linear_MNA();
     MNA_Y = liner_Y;
+    
     for (auto &dev : ckt.nonlinear_devices){
         char c = toupper(dev.name[0]);
-        //MOS管
-        // if (c == 'M'){
-        //     int d = dev.nodes[0];
-        //     int g = dev.nodes[1];
-        //     int s = dev.nodes[2];
-        //     //简单的DC工作点假设：Vgs=2V, Vds=2V, kn=0.5mA/V^2, Vth=1V
-        //     double Vg = (g == 0) ? 0.0 : node_voltages[g - 1];
-        //     double Vs = (s == 0) ? 0.0 : node_voltages[s - 1];
-        //     double Vd = (d == 0) ? 0.0 : node_voltages[d - 1];
-        //     double Vgs = Vg - Vs;
-        //     if ()
-        //     double kn = dev.parameters["KP"]; //单位A/V^2
-        //     double Vth = dev.parameters["VTO"]; //单位V
-        //     double Ids = 0.0;
-        //     if (Vgs <= Vth){
-        //         Ids = 0.0; //截止区
-        //     }
-        //     else if (Vds < (Vgs - Vth)){
-        //         Ids = kn * ((Vgs - Vth) * Vds - 0.5 * Vds * Vds); //线性区
-        //     }
-        //     else{
-        //         Ids = 0.5 * kn * (Vgs - Vth) * (Vgs - Vth); //饱和区
-        //     }
-        //     if (d != 0){
-        //         J(d - 1) -= Ids; //流出漏极为负
-        //     }
-        //     if (s != 0){
-        //         J(s - 1) += Ids; //流入源极为正
-        //     }
-        // }
+
     }
     for (auto &dev : ckt.sources){
         char c = toupper(dev.name[0]);
