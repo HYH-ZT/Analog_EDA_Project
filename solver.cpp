@@ -3,6 +3,7 @@
 #include <iostream>
 #include "circuit.hpp"
 
+
 solver::solver(circuit& ckt_, analysis& analysis_):ckt(ckt_), analysis_type(analysis_){
     liner_Y.resize(ckt.node_map.size() - 1, ckt.node_map.size() - 1); //不包含地节点
     liner_Y.setZero();
@@ -354,7 +355,7 @@ void solver::build_nonlinear_MNA() {
     // 假设 J 已预先被清零并且大小等于节点数（node_count）
     // node_voltages 存的是上一次迭代的节点电压，索引对应节点编号-1，节点0(ground)不在该向量中
 
-    const double gmin = 1e-12; // cutoff 时的小导纳容错
+    //const double gmin = 1e-12; // cutoff 时的小导纳容错
     int nodeCount = (int)ckt.node_list.size() - 1; // node_list 含地吗？根据你的mapping调整
     // 注意：如果 node_voltages 的长度不同，请确保索引安全
     // 对每一个 MOS 器件做线性化并 stamp
@@ -396,11 +397,16 @@ void solver::build_nonlinear_MNA() {
         double V1 = V_of(n1);
         double Vg0 = V_of(ng);
         double V2 = V_of(n2);
-        //根据电压高低确定 Drain 和 Source
+
+        // 对于 PMOS，把电压和阈值变换为针对模型的常用形式
+        // 这里我们通过 TYPE 字段处理：如果 TYPE==-1（p），把电压极性翻转
+        double sign = type; // n: +1, p: -1
+
+        //根据电压高低确定 Drain 和 Source, 注意NMOS和PMOS的源漏定义
         int nd, ns;
         double Vd0, Vs0;
 
-        if (V1 > V2) {
+        if (V1 > V2 && type == 1.0 || V1 < V2 && type == -1.0) { 
             nd = n1;  Vd0 = V1;
             ns = n2; Vs0 = V2;
         } else {
@@ -408,12 +414,10 @@ void solver::build_nonlinear_MNA() {
             ns = n1; Vs0 = V1;
         }
 
-        // 对于 PMOS，把电压和阈值变换为针对模型的常用形式
-        // 这里我们通过 TYPE 字段处理：如果 TYPE==-1（p），把电压极性翻转
-        double sign = type; // n: +1, p: -1
         double Vgs = sign * (Vg0 - Vs0);
         double Vds = sign * (Vd0 - Vs0);
-        double Vth = VTO; // 参考极性已由 sign 处理
+        double Vth = VTO * sign; // 参考极性已由 sign 处理
+
 
         // 计算 Id0, gm, gds
         double Id0 = 0.0;
@@ -422,9 +426,7 @@ void solver::build_nonlinear_MNA() {
 
         if (Vgs <= Vth) {
             // cutoff
-            Id0 = 0.0;
-            gm = 0.0;
-            gds = gmin;
+            continue;
         } else {
             // 依据 Vds 与 Vgs-Vth 判定工作区
             double Vov = Vgs - Vth; // overdrive
@@ -438,7 +440,7 @@ void solver::build_nonlinear_MNA() {
                 gm = beta * Vds * (1.0 + LAMBDA * Vds);
                 // gds = ∂Id/∂Vd = beta * (Vov - Vds) * (1 + lambda*Vds) + Id_no_lambda * lambda
                 gds = beta * (Vov - Vds) * (1.0 + LAMBDA * Vds) + Id_no_lambda * LAMBDA;
-                if (gds < gmin) gds = gmin;
+                //if (gds < gmin) gds = gmin;
             } else {
                 // 饱和区 (saturation)
                 // Id = 0.5 * beta * Vov^2 * (1 + lambda*Vds)
@@ -448,7 +450,7 @@ void solver::build_nonlinear_MNA() {
                 gm = beta * Vov * (1.0 + LAMBDA * Vds);
                 // gds = ∂Id/∂Vd = Id_no_lambda * lambda
                 gds = Id_no_lambda * LAMBDA;
-                if (gds < gmin) gds = gmin;
+                //if (gds < gmin) gds = gmin;
             }
         }
 
@@ -502,16 +504,7 @@ void solver::build_nonlinear_MNA() {
     } // end for each MOS
 }
 
-//直流分析
-void solver::DC_solve(){
-    //构建直流MNA矩阵
-    build_linear_MNA();
-    MNA_Y = liner_Y;
-    
-    for (auto &dev : ckt.nonlinear_devices){
-        char c = toupper(dev.name[0]);
-
-    }
+void solver::build_sources_MNA(){
     for (auto &dev : ckt.sources){
         char c = toupper(dev.name[0]);
         //独立电压源
@@ -561,14 +554,47 @@ void solver::DC_solve(){
             }
         }
     }
+}
 
+//直流分析
+void solver::DC_solve() {
+    const int maxNewtonIter = 50;
+    const double tol = 1e-9;
 
-    ////////////////11.27用于验证线性直流求解结果正确/////////////////////
-    //不同方法求解MNA方程
-    //solve_linear_MNA_Gauss();
-    solve_linear_MNA_LU();
-    // get_linear_MNA_LU_manual();
-    // solve_with_LU_matrices();
+    // 1. 只构建一次线性矩阵
+    build_linear_MNA();
+
+    int nodeCount = (int)ckt.node_list.size() - 1;
+    node_voltages = Eigen::VectorXd::Zero(nodeCount);
+    node_voltages(3) = 2.4902; // 初始猜测，可以根据经验调整
+
+    for (int iter = 0; iter < maxNewtonIter; iter++) {
+
+        // 2. 每次迭代重新构造 MNA
+        MNA_Y = liner_Y;
+        J = Eigen::VectorXd::Zero(MNA_Y.rows());
+
+        // 3. MOS stamp
+        build_nonlinear_MNA();
+
+        // 4. 电源 stamp
+        build_sources_MNA();
+
+        // Debug: 输出当前迭代的 MNA 矩阵和 J 向量
+        std::cout << "Iteration " << iter + 1 << ":\n";
+        std::cout << "MNA_Y:\n" << MNA_Y << "\n";
+        std::cout << "J:\n" << J << "\n";
+
+        // 5. 求解线性方程
+        solve_linear_MNA_LU();
+
+        // Debug: 输出当前迭代的节点电压
+        std::cout << "Node Voltages:\n" << node_voltages << std::endl << std::endl;   
+        // 6. 检查收敛性
+    }
+
+    //std::cout << "DC did NOT converge.\n";
+
     //展示节点电压结果
     std::cout << "DC Analysis Node Voltages:\n";
     for (const auto& pair : ckt.node_map){
@@ -582,3 +608,26 @@ void solver::DC_solve(){
         }
     }
 }
+    
+    
+
+
+//     ////////////////11.27用于验证线性直流求解结果正确/////////////////////
+//     //不同方法求解MNA方程
+//     //solve_linear_MNA_Gauss();
+//     solve_linear_MNA_LU();
+//     // get_linear_MNA_LU_manual();
+//     // solve_with_LU_matrices();
+//     //展示节点电压结果
+//     std::cout << "DC Analysis Node Voltages:\n";
+//     for (const auto& pair : ckt.node_map){
+//         const std::string& node_name = pair.first;
+//         int node_id = pair.second;
+//         if (node_id == 0){
+//             std::cout << "Node " << node_name << " (ID " << node_id << "): 0 V (Ground)\n";
+//         }
+//         else{
+//             std::cout << "Node " << node_name << " (ID " << node_id << "): " << node_voltages[node_id - 1] << " V\n";
+//         }
+//     }
+// }

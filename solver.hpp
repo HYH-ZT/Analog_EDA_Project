@@ -18,9 +18,9 @@ class solver {
         //最终MNA矩阵
         Eigen::MatrixXd MNA_Y;
         //各节点电压
-        std::vector<double> node_voltages;
+        Eigen::VectorXd node_voltages;
         //支路电流（用于电压源等）
-        std::vector<double> branch_currents;
+        Eigen::VectorXd branch_currents;
         //构建线性MNA矩阵和J向量
         void build_linear_MNA();
         //非线性器件的处理
