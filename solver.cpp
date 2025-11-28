@@ -374,15 +374,17 @@ void solver::build_nonlinear_MNA() {
 
         // 找到 model 并读取参数（KP, VTO, LAMBDA）
         const model* pmodel = ckt.findModelConst(dev.model);
-        double KP = 1e-4;    // 默认值μCox（你可按需要改）
-        double VTO = 1.0;    // 默认阈值
-        double LAMBDA = 0.0; // channel-length modulation
+        double MU;
+        double COX;
+        double VT;
+        double LAMBDA;
         if (pmodel) {
-            if (pmodel->parameters.count("KP")) KP = pmodel->parameters.at("KP");
-            if (pmodel->parameters.count("VTO")) VTO = pmodel->parameters.at("VTO");
+            if (pmodel->parameters.count("MU")) MU = pmodel->parameters.at("MU");
+            if (pmodel->parameters.count("VT")) VT = pmodel->parameters.at("VT");
+            if (pmodel->parameters.count("COX")) COX = pmodel->parameters.at("COX");
             if (pmodel->parameters.count("LAMBDA")) LAMBDA = pmodel->parameters.at("LAMBDA");
         }
-
+        double KP = MU * COX; // 过程跨导参数
         // beta = KP * (W / L)
         double beta = KP * (W / L);
 
@@ -416,7 +418,7 @@ void solver::build_nonlinear_MNA() {
 
         double Vgs = sign * (Vg0 - Vs0);
         double Vds = sign * (Vd0 - Vs0);
-        double Vth = VTO * sign; // 参考极性已由 sign 处理
+        double Vth = VT * sign; // 参考极性已由 sign 处理
 
 
         // 计算 Id0, gm, gds
