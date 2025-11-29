@@ -408,23 +408,28 @@ void solver::build_nonlinear_MNA() {
         int nd, ns;
         double Vd0, Vs0;
 
-        if (V1 > V2 && type == 1.0 || V1 < V2 && type == -1.0) { 
-            nd = n1;  Vd0 = V1;
-            ns = n2; Vs0 = V2;
+        if (V1 > V2 && type > 0 || V1 <= V2 && type < 0) { 
+            nd = n1;
+            Vd0 = V1;
+            ns = n2; 
+            Vs0 = V2;
         } else {
-            nd = n2;  Vd0 = V2;
-            ns = n1; Vs0 = V1;
+            nd = n2; 
+            Vd0 = V2;
+            ns = n1; 
+            Vs0 = V1;
         }
 
         double Vgs = sign * (Vg0 - Vs0);
         double Vds = sign * (Vd0 - Vs0);
-        double Vth = VT * sign; // 参考极性已由 sign 处理
+        double Vth = VT * sign; 
 
 
-        // 计算 Id0, gm, gds
+        // 计算 Id0, gm, gds, Ieq
         double Id0 = 0.0;
         double gm = 0.0;
         double gds = 0.0;
+        double Ieq = 0.0;
 
         if (Vgs <= Vth) {
             // cutoff
@@ -434,26 +439,23 @@ void solver::build_nonlinear_MNA() {
             double Vov = Vgs - Vth; // overdrive
             if (Vds < Vov) {
                 // 线性区 (triode)
-                // Id = beta * ( (Vov)*Vds - 0.5*Vds^2 ) * (1 + lambda*Vds)
-                double Id_no_lambda = beta * (Vov * Vds - 0.5 * Vds * Vds);
-                Id0 = Id_no_lambda * (1.0 + LAMBDA * Vds);
+                // Id = beta * ( (Vov)*Vds - 0.5*Vds^2 )
+                Id0 = beta * (Vov * Vds - 0.5 * Vds * Vds);
                 // 导数计算
-                // gm = ∂Id/∂Vg = beta * Vds * (1 + lambda*Vds)
-                gm = beta * Vds * (1.0 + LAMBDA * Vds);
-                // gds = ∂Id/∂Vd = beta * (Vov - Vds) * (1 + lambda*Vds) + Id_no_lambda * lambda
-                gds = beta * (Vov - Vds) * (1.0 + LAMBDA * Vds) + Id_no_lambda * LAMBDA;
-                //if (gds < gmin) gds = gmin;
+                // gm = ∂Id/∂Vg = beta * Vds
+                gm = beta * Vds;
+                // gds = ∂Id/∂Vd = beta * (Vov - Vds)
+                gds = beta * (Vov - Vds);
             } else {
                 // 饱和区 (saturation)
                 // Id = 0.5 * beta * Vov^2 * (1 + lambda*Vds)
-                double Id_no_lambda = 0.5 * beta * Vov * Vov;
-                Id0 = Id_no_lambda * (1.0 + LAMBDA * Vds);
+                Id0 = 0.5 * beta * Vov * Vov * (1.0 + LAMBDA * Vds);
                 // gm = ∂Id/∂Vg = beta * Vov * (1 + lambda*Vds)
                 gm = beta * Vov * (1.0 + LAMBDA * Vds);
-                // gds = ∂Id/∂Vd = Id_no_lambda * lambda
-                gds = Id_no_lambda * LAMBDA;
-                //if (gds < gmin) gds = gmin;
+                // gds = ∂Id/∂Vd = 0.5 * lambda * beta * Vov^2
+                gds = 0.5 * LAMBDA * beta * Vov;
             }
+            Ieq = Id0 - gm * Vgs - gds * Vds;
         }
 
         // 对 PMOS，我们计算的 Id0/gm/gds 是基于 sign * voltages 的正向定义。
@@ -463,7 +465,6 @@ void solver::build_nonlinear_MNA() {
         // 现在构造线性方程：小信号 i ≈ gds*(vd - vs) + gm*(vg - vs) + Iconst
         // 求常量 Iconst 使在工作点成立：
         // Iconst = Id0 - gds*Vd0 - gm*Vg0 + (gds+gm)*Vs0
-        double Iconst = Id0 - gds * Vd0 - gm * Vg0 + (gds + gm) * Vs0;
 
         // --- 把 gm, gds, Iconst stamp 进 MNA_Y 和 J ---
         // 注意：节点编号为 0 表示地。MNA_Y 行列对应节点编号 1..N -> 索引 0..N-1
@@ -479,30 +480,22 @@ void solver::build_nonlinear_MNA() {
             J(idx) += val;
         };
 
-        // Drain row/col
-        // row d: +gds at (d,d); +gm at (d,g); -(gds+gm) at (d,s)
-        if (nd != 0) addToY(nd, nd, gds);
-        if (ng != 0) addToY(nd, ng, gm);
-        if (ns != 0) addToY(nd, ns, -(gds + gm));
+        //处理gm，受控电流源
+        addToY(nd, ng, gm);
+        addToY(ns, ng, -gm);
+        addToY(nd, ns, -gm);
+        addToY(ns, ns, gm);
 
-        // Source row/col
-        // row s: -gds at (s,d); -gm at (s,g); +(gds+gm) at (s,s)
-        if (ns != 0) addToY(ns, ns, (gds + gm));
-        if (nd != 0) addToY(ns, nd, -gds);
-        if (ng != 0) addToY(ns, ng, -gm);
+        //处理gds，电导
+        addToY(nd, nd, gds);
+        addToY(nd, ns, -gds);
+        addToY(ns, ns, -gds);
+        addToY(ns, ns, gds);
 
-        // Gate 列：我们已经在 (d,g) 和 (s,g) 加了非对角项。Gate 自身对角不增加导纳（理想 MOS gate 无直流电流）
-        // 如果 nd/ns/ng 中有 ground(0)，上面对地的 addToY 会被忽略 —— 但要把等效电流接回地
-
-        // 把等效常数电流 Iconst 当作从 drain -> source 的独立电流源来处理：
-        // 我们采用约定：J 向量表示注入到节点（positive into node）。
-        // 对于一个从 drain 流向 source 的电流 Iconst：
-        //   在 drain 节点的注入量应减少 Iconst（因为电流离开 drain），所以 J[d] -= Iconst
-        //   在 source 节点的注入量应增加 Iconst（因为电流流入 source），所以 J[s] += Iconst
-        if (nd != 0) addToJ(nd, -Iconst);
-        if (ns != 0) addToJ(ns, +Iconst);
-
-        // 备注：如果需要考虑 body/bulk (第四个节点)，可以在此加入 body effect （影响 Vth）或把 body 当成源处理。
+        //处理Ieq，直流源
+        Ieq *= sign;
+        addToJ(nd, -Ieq);
+        addToJ(ns, Ieq);
     } // end for each MOS
 }
 
@@ -568,6 +561,10 @@ void solver::DC_solve() {
 
     int nodeCount = (int)ckt.node_list.size() - 1;
     node_voltages = Eigen::VectorXd::Zero(nodeCount);
+
+    node_voltages(0) = 3;
+    node_voltages(1) = 1.5;
+    node_voltages(2) = 1.5;
     node_voltages(3) = 2.4902; // 初始猜测，可以根据经验调整
 
     for (int iter = 0; iter < maxNewtonIter; iter++) {
