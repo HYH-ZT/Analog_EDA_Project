@@ -38,10 +38,16 @@ class solver {
         void solve_with_LU_matrices();
         //Gauss-Jacobi迭代法求解线性MNA方程
         void solve_linear_MNA_Gauss_Jacobi();
+        
+        //MNA矩阵操作辅助函数
+        void addToY(int rowNode, int colNode, double val);
+        void addToJ(int node, double val);
     public:
         solver(circuit& ckt_, analysis& analysis_);
         //直流分析
         void DC_solve();
+        void DC_solve(const Eigen::VectorXd& initial_voltages);
+        void DC_solve(const std::map<std::string, double>& node_voltage_map);
         //瞬态分析
         void TRAN_solve();
         //稳态分析

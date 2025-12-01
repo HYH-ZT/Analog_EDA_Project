@@ -350,6 +350,63 @@ void solver::build_linear_MNA(){
     }
 }
 
+//MNA矩阵操作辅助函数
+void solver::addToY(int rowNode, int colNode, double val) {
+    if (rowNode == 0 || colNode == 0) return;
+    int r = rowNode - 1;
+    int c = colNode - 1;
+    
+    // 检查是否需要扩展矩阵大小
+    int current_rows = MNA_Y.rows();
+    int current_cols = MNA_Y.cols();
+    int required_size = std::max(r + 1, c + 1);
+    
+    if (required_size > current_rows || required_size > current_cols) {
+        // 需要扩展矩阵
+        int new_size = std::max({current_rows, current_cols, required_size});
+        
+        // 保存原矩阵
+        Eigen::MatrixXd old_matrix = MNA_Y;
+        
+        // 重新调整大小并初始化为零
+        MNA_Y.resize(new_size, new_size);
+        MNA_Y.setZero();
+        
+        // 复制原矩阵内容到新矩阵
+        if (current_rows > 0 && current_cols > 0) {
+            MNA_Y.block(0, 0, current_rows, current_cols) = old_matrix;
+        }
+    }
+    
+    MNA_Y(r, c) += val;
+}
+
+void solver::addToJ(int node, double val) {
+    if (node == 0) return;
+    int idx = node - 1;
+    
+    // 检查是否需要扩展向量大小
+    int current_size = J.size();
+    int required_size = idx + 1;
+    
+    if (required_size > current_size) {
+        // 需要扩展向量
+        // 保存原向量
+        Eigen::VectorXd old_vector = J;
+        
+        // 重新调整大小并初始化为零
+        J.resize(required_size);
+        J.setZero();
+        
+        // 复制原向量内容到新向量
+        if (current_size > 0) {
+            J.head(current_size) = old_vector;
+        }
+    }
+    
+    J(idx) += val;
+}
+
 void solver::build_nonlinear_MNA() {
     // 假设 MNA_Y 已经被初始化为 liner_Y 的副本（见你 DC_solve 片段）
     // 假设 J 已预先被清零并且大小等于节点数（node_count）
@@ -468,17 +525,6 @@ void solver::build_nonlinear_MNA() {
 
         // --- 把 gm, gds, Iconst stamp 进 MNA_Y 和 J ---
         // 注意：节点编号为 0 表示地。MNA_Y 行列对应节点编号 1..N -> 索引 0..N-1
-        auto addToY = [&](int rowNode, int colNode, double val) {
-            if (rowNode == 0 || colNode == 0) return;
-            int r = rowNode - 1;
-            int c = colNode - 1;
-            MNA_Y(r, c) += val;
-        };
-        auto addToJ = [&](int node, double val) {
-            if (node == 0) return;
-            int idx = node - 1;
-            J(idx) += val;
-        };
 
         //处理gm，受控电流源
         addToY(nd, ng, gm);
@@ -579,17 +625,26 @@ void solver::DC_solve() {
         // 4. 电源 stamp
         build_sources_MNA();
 
-        // Debug: 输出当前迭代的 MNA 矩阵和 J 向量
-        std::cout << "Iteration " << iter + 1 << ":\n";
-        std::cout << "MNA_Y:\n" << MNA_Y << "\n";
-        std::cout << "J:\n" << J << "\n";
+        // // Debug: 输出当前迭代的 MNA 矩阵和 J 向量
+        // std::cout << "Iteration " << iter + 1 << ":\n";
+        // std::cout << "MNA_Y:\n" << MNA_Y << "\n";
+        // std::cout << "J:\n" << J << "\n";
 
         // 5. 求解线性方程
+        //保存旧节点电压用于收敛性检查
+        Eigen::VectorXd old_node_voltages = node_voltages;
         solve_linear_MNA_LU();
 
-        // Debug: 输出当前迭代的节点电压
-        std::cout << "Node Voltages:\n" << node_voltages << std::endl << std::endl;   
+        // // Debug: 输出当前迭代的节点电压
+        // std::cout << "Node Voltages:\n" << node_voltages << std::endl << std::endl; 
+
         // 6. 检查收敛性
+        double max_diff = (node_voltages - old_node_voltages).cwiseAbs().maxCoeff();
+        std::cout << "Max voltage change: " << max_diff << "\n";
+        if (max_diff < tol) {
+            std::cout << "Converged after " << iter + 1 << " iterations.\n";
+            break;
+        }
     }
 
     //std::cout << "DC did NOT converge.\n";
@@ -606,6 +661,109 @@ void solver::DC_solve() {
             std::cout << "Node " << node_name << " (ID " << node_id << "): " << node_voltages[node_id - 1] << " V\n";
         }
     }
+}
+
+// 使用节点名和电压值的映射来设置初值
+void solver::DC_solve(const std::map<std::string, double>& node_voltage_map) {
+    const int maxNewtonIter = 50;
+    const double tol = 1e-9;
+
+    // 1. 只构建一次线性矩阵
+    build_linear_MNA();
+
+    int nodeCount = (int)ckt.node_list.size() - 1;
+    node_voltages = Eigen::VectorXd::Zero(nodeCount);
+
+    // 根据输入的节点名和电压值设置初值
+    for (const auto& entry : node_voltage_map) {
+        const std::string& node_name = entry.first;
+        double voltage = entry.second;
+        
+        // 检查节点是否存在
+        auto it = ckt.node_map.find(node_name);
+        if (it != ckt.node_map.end()) {
+            int node_id = it->second;
+            if (node_id > 0 && node_id <= nodeCount) {
+                node_voltages(node_id - 1) = voltage;
+                std::cout << "Set initial voltage for node " << node_name 
+                         << " (ID " << node_id << "): " << voltage << " V\n";
+            }
+        } else {
+            std::cout << "Warning: Node " << node_name << " not found in circuit\n";
+        }
+    }
+
+    for (int iter = 0; iter < maxNewtonIter; iter++) {
+
+        // 2. 每次迭代重新构造 MNA
+        MNA_Y = liner_Y;
+        J = Eigen::VectorXd::Zero(MNA_Y.rows());
+
+        // 3. MOS stamp
+        build_nonlinear_MNA();
+
+        // 4. 电源 stamp
+        build_sources_MNA();
+
+        // // Debug: 输出当前迭代的 MNA 矩阵和 J 向量
+        // std::cout << "Iteration " << iter + 1 << ":\n";
+        // std::cout << "MNA_Y:\n" << MNA_Y << "\n";
+        // std::cout << "J:\n" << J << "\n";
+
+        // 5. 求解线性方程
+        //保存旧节点电压用于收敛性检查
+        Eigen::VectorXd old_node_voltages = node_voltages;
+        solve_linear_MNA_LU();
+
+        // Debug: 输出当前迭代的节点电压
+        //std::cout << "Node Voltages:\n" << node_voltages << std::endl << std::endl; 
+
+        // 6. 检查收敛性
+        double max_diff = (node_voltages - old_node_voltages).cwiseAbs().maxCoeff();
+        std::cout << "Max voltage change: " << max_diff << "\n";
+        if (max_diff < tol) {
+            std::cout << "Converged after " << iter + 1 << " iterations.\n";
+            break;
+        }
+    }
+
+    //std::cout << "DC did NOT converge.\n";
+
+    //展示节点电压结果
+    std::cout << "DC Analysis Node Voltages:\n";
+    for (const auto& pair : ckt.node_map){
+        const std::string& node_name = pair.first;
+        int node_id = pair.second;
+        if (node_id == 0){
+            std::cout << "Node " << node_name << " (ID " << node_id << "): 0 V (Ground)\n";
+        }
+        else{
+            std::cout << "Node " << node_name << " (ID " << node_id << "): " << node_voltages[node_id - 1] << " V\n";
+        }
+    }
+}
+
+ 
+//瞬态分析
+void solver::TRAN_solve(){
+
+
+    //将MOS管的电容提取到线性元件列表中
+    ckt.extract_MOS_capacitances();
+
+
+    //Debug: 输出提取后的线性元件
+    std::cout << "Linear devices after extracting MOS capacitances:\n";
+    for (const auto& dev : ckt.linear_devices) {
+        std::cout << "Device: " << dev.name << ", Type: " << dev.type << ", Nodes: ";
+        for (const auto& node_name : dev.node_names) {
+            std::cout << node_name << " ";
+        }
+        std::cout << ", Value: " << dev.parameters.at("value") << "\n";
+    }
+
+    //先进行直流分析，获得初始条件
+    // DC_solve();
 }
     
     
