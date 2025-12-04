@@ -1419,5 +1419,4 @@ void solver::TRAN_solve(){
 //             std::cout << "Node " << node_name << " (ID " << node_id << "): " << node_voltages[node_id - 1] << " V\n";
 //         }
 //     }
->>>>>>> 8ebf0dc87b7b1f108465230e37d43bf9057ea267
 // }
