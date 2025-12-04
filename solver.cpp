@@ -562,10 +562,10 @@ void solver::DC_solve() {
     int nodeCount = (int)ckt.node_list.size() - 1;
     node_voltages = Eigen::VectorXd::Zero(nodeCount);
 
-    node_voltages(0) = 3;
-    node_voltages(1) = 1.5;
-    node_voltages(2) = 1.5;
-    node_voltages(3) = 2.4902; // 初始猜测，可以根据经验调整
+    // node_voltages(0) = 3;
+    // node_voltages(1) = 1.5;
+    // node_voltages(2) = 1.5;
+    // node_voltages(3) = 2.4902; // 初始猜测，可以根据经验调整
 
     for (int iter = 0; iter < maxNewtonIter; iter++) {
 
