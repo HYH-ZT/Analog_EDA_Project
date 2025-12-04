@@ -3,6 +3,7 @@
 #include <string>
 #include <unordered_map>
 #include <map>
+#include <Eigen/Dense>
 
 struct device{
     std::string name;
@@ -12,6 +13,9 @@ struct device{
     std::map<std::string, double> parameters;
     std::string model; //对于有模型的器件，比如MOS管
     std::string rawline; //原始输入行
+    int branch_current_index = -1; //对于电压源等需要引入支路电流变量的器件，记录其支路电流变量在MNA矩阵中的索引
+    std::string original_device_name = ""; //如果是动态等效器件，记录原始器件名称，否则为空
+    bool printI = false; //是否在分析中打印该器件电流
 };
 struct model{
     std::string name;
@@ -21,6 +25,7 @@ struct model{
 struct analysis{
     std::string type; // DC, AC, TRAN, etc.
     std::map<std::string, double> parameters;
+    std::vector<std::string> print_variables; // .print命令指定的输出变量,如 V(103), I(VTN)
 };
 struct circuit
 {
@@ -30,7 +35,9 @@ struct circuit
     std::vector<device> nonlinear_devices;
     std::vector<device> sources;
     std::vector<model> models;
-
+    //添加需要打印的node电压和sources的电流
+    std::vector<int> print_node_ids;
+    std::vector<int> print_branch_current_indices;
     int getNodeID(const std::string &name); //根据节点名获取节点编号
     const model* findModelConst(const std::string& modelName);
     //提取MOS管的寄生电容，转换为线性电容器件，加入linear_devices列表

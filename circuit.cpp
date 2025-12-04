@@ -105,3 +105,5 @@ void circuit::extract_MOS_capacitances() {
     // 将提取的线性电容器件加入 linear_devices 列表
     linear_devices.insert(linear_devices.end(), new_linear_devices.begin(), new_linear_devices.end());
 }
+
+

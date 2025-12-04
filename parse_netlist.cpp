@@ -169,19 +169,48 @@ static void parseAnalysisLine(const std::string& line, std::vector<analysis>& an
         iss >> freq >> harm;
         a.parameters["freq"] = freq;
         a.parameters["harm"] = harm;
+        analysis_list.push_back(a);
     }
     else if (cmd == ".tran") {
         a.type = "TRAN";
         double step, stop;
         iss >> step >> stop;
-        a.parameters["step"] = step;
-        a.parameters["stop"] = stop;
+        a.parameters["tstep"] = step;
+        a.parameters["tstop"] = stop;
+        analysis_list.push_back(a);
     }
     else if (cmd == ".dc") {
         a.type = "DC";
+        analysis_list.push_back(a);
     }
-
-    analysis_list.push_back(a);
+    else if (cmd == ".print") {
+        // .print命令: .print tran V(103) V(105) I(VTN) I(VTP)
+        std::string analysis_type;
+        iss >> analysis_type; // 读取分析类型(tran, dc, ac等)
+        
+        // 将分析类型转换为大写
+        for (auto& c : analysis_type) {
+            c = std::toupper(static_cast<unsigned char>(c));
+        }
+        
+        // 查找最近的匹配分析类型
+        bool found = false;
+        for (int i = analysis_list.size() - 1; i >= 0; --i) {
+            if (analysis_list[i].type == analysis_type) {
+                // 读取所有输出变量并添加到该分析
+                std::string var;
+                while (iss >> var) {
+                    analysis_list[i].print_variables.push_back(var);
+                }
+                found = true;
+                break;
+            }
+        }
+        
+        if (!found) {
+            std::cerr << "⚠️  警告: .print命令未找到对应的 " << analysis_type << " 分析" << std::endl;
+        }
+    }
 }
 
 
