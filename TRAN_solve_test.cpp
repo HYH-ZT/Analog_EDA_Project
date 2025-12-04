@@ -5,23 +5,18 @@
 #include "circuit.hpp"   // 包含 circuit/device/model 定义
 #include "parse_netlist.hpp"
 #include "solver.hpp"
+#include <map>
 
 using namespace std;
 
-int main_dc(){
+int main(){
     circuit ckt;
     vector<string> netlist;
     vector<analysis> analyses;
     //parseNetlistFile("resistor_net.sp", ckt, analyses); //测试电阻网络
     parseNetlistFile("buffer.sp", ckt, analyses); 
     // 使用节点名和电压值的映射设置初值
-    std::map<std::string, double> initial_voltages;
-    initial_voltages["VDD"] = 3.0;
-    initial_voltages["OUT"] = 1.5;
-    initial_voltages["NET1"] = 1.8;
-    initial_voltages["NET2"] = 2.2;
 
     solver sol(ckt, analyses[0]);
-    sol.DC_solve();
-    sol.DC_solve(initial_voltages);
+    sol.TRAN_solve();
 }
