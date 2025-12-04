@@ -8,12 +8,12 @@
 
 using namespace std;
 
-int main_dc(){
+int main(){
     circuit ckt;
     vector<string> netlist;
     vector<analysis> analyses;
     //parseNetlistFile("resistor_net.sp", ckt, analyses); //测试电阻网络
-    parseNetlistFile("CSamp.sp", ckt, analyses); 
+    parseNetlistFile("buffer.sp", ckt, analyses); 
     // 使用节点名和电压值的映射设置初值
     std::map<std::string, double> initial_voltages;
     initial_voltages["101"] = 5.0;
@@ -23,7 +23,7 @@ int main_dc(){
     initial_voltages["105"] = 1.0;
 
     solver sol(ckt, analyses[0]);
-
+    sol.setLinearSolverMethod(LinearSolverMethod::GAUSS_JACOBI);
     sol.DC_solve(initial_voltages);
     sol.DC_solve();
     return 0;

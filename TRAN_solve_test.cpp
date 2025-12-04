@@ -9,7 +9,7 @@
 
 using namespace std;
 
-int main(){
+int main_tran(){
     circuit ckt;
     vector<string> netlist;
     vector<analysis> analyses;

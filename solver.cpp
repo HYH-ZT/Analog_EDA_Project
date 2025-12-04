@@ -7,16 +7,20 @@
 #include <fstream>
 
 
-solver::solver(circuit& ckt_, analysis& analysis_):ckt(ckt_), analysis_type(analysis_){
+solver::solver(circuit& ckt_, analysis& analysis_, 
+               LinearSolverMethod lsm, TransientMethod tm,
+               SteadyStateMethod ssm)
+    : ckt(ckt_), analysis_type(analysis_),
+      linear_solver_method(lsm), transient_method(tm), steady_state_method(ssm) {
     liner_Y.resize(ckt.node_map.size() - 1, ckt.node_map.size() - 1); //不包含地节点
     liner_Y.setZero();
     J.resize(ckt.node_map.size() - 1);
     J.setZero();
     
-    // 设置默认求解方法
-    linear_solver_method = LinearSolverMethod::LU_DECOMPOSITION;
-    transient_method = TransientMethod::TRAPEZOIDAL;
-    steady_state_method = SteadyStateMethod::NEWTON_RAPHSON;
+    // // 设置默认求解方法
+    // linear_solver_method = LinearSolverMethod::LU_DECOMPOSITION;
+    // transient_method = TransientMethod::TRAPEZOIDAL;
+    // steady_state_method = SteadyStateMethod::SHOOTING;
 }
 
 //解析打印变量，填充ckt.print_node_ids，以及sources中器件的printI标志
@@ -364,7 +368,7 @@ void solver::solve_linear_MNA_Gauss_Jacobi(){
                 }
             }
             if (std::abs(MNA_Y(i, i)) < 1e-12) {
-                std::cout << "Warning: Near-zero diagonal element at row " << i << "\n";
+                // std::cout << "Warning: Near-zero diagonal element at row " << i << "\n";
                 x_new(i) = 0.0;
             } else {
                 x_new(i) = sum / MNA_Y(i, i);
@@ -914,6 +918,10 @@ void solver::DC_solve(const std::map<std::string, double>& node_voltage_map, boo
         Eigen::VectorXd old_node_voltages = node_voltages;
         solve_linear_MNA();
 
+        // 或许可以用（
+        // Eigen::VectorXd delta_node_voltages = node_voltages - old_node_voltages;
+        // node_voltages = old_node_voltages + 0.8 * delta_node_voltages;
+
         // // Debug: 输出当前迭代的节点电压
         // std::cout << "Node Voltages:\n" << node_voltages << std::endl << std::endl; 
 
@@ -1181,7 +1189,6 @@ void solver::build_transient_ckt(double tstep){
     }
 }
 
- 
 //瞬态分析
 void solver::TRAN_solve(){
     //提取电容信息

@@ -20,9 +20,9 @@ enum class TransientMethod {
 
 // 稳态分析方法枚举
 enum class SteadyStateMethod {
-    NEWTON_RAPHSON = 0,     // Newton-Raphson法
-    DAMPED_NEWTON = 1,      // 阻尼Newton法
-    CONTINUATION = 2        // 延拓法
+    SHOOTING = 0,     // 这玩意中文不会真叫射击法吧
+    HARMONIC_BALANCE = 1,      // 谐波平衡法
+    //CONTINUATION = 2        // 延拓法 这是啥
 };
 
 class solver {
@@ -85,7 +85,10 @@ class solver {
 
 
     public:
-        solver(circuit& ckt_, analysis& analysis_);
+        solver(circuit& ckt_, analysis& analysis_, 
+               LinearSolverMethod lsm = LinearSolverMethod::LU_DECOMPOSITION,
+               TransientMethod tm = TransientMethod::TRAPEZOIDAL,
+               SteadyStateMethod ssm = SteadyStateMethod::SHOOTING);
         
         // 设置求解方法
         void setLinearSolverMethod(LinearSolverMethod method) { linear_solver_method = method; }
@@ -98,13 +101,15 @@ class solver {
         SteadyStateMethod getSteadyStateMethod() const { return steady_state_method; }
         
         //直流分析
-        void DC_solve();
-        void DC_solve(const Eigen::VectorXd& initial_voltages,bool in_tran = false);
-        void DC_solve(const std::map<std::string, double>& node_voltage_map,bool in_tran = false);
+        void DC_solve();    //默认初值为0
+        void DC_solve(const Eigen::VectorXd& initial_voltages,bool in_tran = false);    //根据输入的节点电压向量设置初值，给瞬态用的
+        void DC_solve(const std::map<std::string, double>& node_voltage_map,bool in_tran = false);  //根据节点名和电压值的映射设置初值，给人用的
         //瞬态分析
         void TRAN_solve();
         //
-        void TRAN_solve(double tstop, double tstep);
+        void TRAN_solve(double tstop, double tstep);    //测试用
         //稳态分析
-
+        void PSS_solve();
+        void PSS_solve_shooting();
+        void PSS_solve_harmonic_balance();
 };

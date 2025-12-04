@@ -46,8 +46,8 @@ int main_dc2(){
     
     // 设置稳态分析方法
     cout << "\n=== 设置稳态分析方法 ===\n"; 
-    sol.setSteadyStateMethod(SteadyStateMethod::NEWTON_RAPHSON);
-    cout << "稳态分析方法设置为：Newton-Raphson法\n";
+    sol.setSteadyStateMethod(SteadyStateMethod::SHOOTING);
+    cout << "稳态分析方法设置为：Shooting Method\n";
     
     // 显示当前设置
     cout << "\n=== 当前求解方法设置 ===\n";
