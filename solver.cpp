@@ -1432,6 +1432,87 @@ void solver::TRAN_solve(double tstop, double tstep){
     }
 }
 
+// 运行一次瞬态，用给定初始条件 init_x，返回 T 处的节点电压
+Eigen::VectorXd solver::run_transient_once(double T, double tstep, const Eigen::VectorXd &init_x)
+{
+    // 设置初始节点电压
+    node_voltages = init_x;
+
+    // 计算步数
+    int steps = static_cast<int>(T / tstep);
+
+    for (int step = 0; step <= steps; step++) {
+        double time = step * tstep;
+
+        // 构建瞬态分析电路
+        build_transient_ckt(tstep);
+
+        // 以当前 node_voltages 为初值求解非线性 MNA
+        DC_solve(node_voltages, true);
+
+        // node_voltages 会在 DC_solve 中被更新，无需额外处理
+        std::cout << node_voltages.size() << std::endl;
+    }
+
+    return node_voltages;   // 即 v(T)
+}
+
+void solver::PSS_solve_shooting(double period_T, double tstep, int max_iters, double tol){
+    // 节点个数
+    int N = ckt.node_map.size() - 1;
+
+    // ---- Step 0：初始化初始条件 X0 ----
+    // 你可以用 DC 解，或者直接用 0
+    Eigen::VectorXd X0 = Eigen::VectorXd::Zero(N);
+
+    std::cout << "Shooting Method Start: N = " << N << "\n";
+
+    for (int iter = 0; iter < max_iters; iter++)
+    {
+        std::cout << "=== Shooting Iteration " << iter << " ===\n";
+
+        // ---- Step1：从 X0 出发运行瞬态，得到周期末 v(T) ----
+        Eigen::VectorXd XT = run_transient_once(period_T, tstep, X0);
+
+        // ---- Step2：误差 F = XT - X0 ----
+        if (XT.size() != X0.size()) {
+            X0 = Eigen::VectorXd::Zero(XT.size());
+        }
+        Eigen::VectorXd F = XT - X0;
+        double err = F.norm();
+
+        std::cout << "Error norm = " << err << "\n";
+
+        // ---- Step3：检查收敛 ----
+        if (err < tol) {
+            std::cout << "Shooting method converged.\n";
+            node_voltages = XT;    // 最终稳态
+            break;
+        }
+
+        // ---- Step4：更新初始条件 ----
+        // 松弛法：X0 ← X0 + α*(XT - X0)
+        double alpha = 0.5;   // 可调，0.3~0.8 之间效果较好
+        X0 = X0 + alpha * F;
+    }
+
+    std::cout << "Warning: Shooting method did NOT converge within max_iters.\n";
+    node_voltages = X0;
+
+    //展示节点电压结果
+    std::cout << "PSS Analysis Node Voltages:\n";
+    for (const auto& pair : ckt.node_map){
+        const std::string& node_name = pair.first;
+        int node_id = pair.second;
+        if (node_id == 0){
+            std::cout << "Node " << node_name << " (ID " << node_id << "): 0 V (Ground)\n";
+        }
+        else{
+            std::cout << "Node " << node_name << " (ID " << node_id << "): " << node_voltages[node_id - 1] << " V\n";
+        }
+    }
+}
+
 
 //     ////////////////11.27用于验证线性直流求解结果正确/////////////////////
 //     //不同方法求解MNA方程

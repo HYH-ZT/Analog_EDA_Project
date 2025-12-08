@@ -110,6 +110,7 @@ class solver {
         void TRAN_solve(double tstop, double tstep);    //测试用
         //稳态分析
         void PSS_solve();
-        void PSS_solve_shooting();
+        Eigen::VectorXd run_transient_once(double T, double tstep, const Eigen::VectorXd &init_x);
+        void PSS_solve_shooting(double period_T, double tstep, int max_iters, double tol);
         void PSS_solve_harmonic_balance();
 };

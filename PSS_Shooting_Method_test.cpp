@@ -1,0 +1,23 @@
+#include <iostream>
+#include <fstream>
+#include <string>
+#include <vector>
+#include "circuit.hpp"   // 包含 circuit/device/model 定义
+#include "parse_netlist.hpp"
+#include "solver.hpp"
+
+using namespace std;
+
+int main(){
+    circuit ckt;
+    vector<string> netlist;
+    vector<analysis> analyses;
+    //parseNetlistFile("resistor_net.sp", ckt, analyses); //测试电阻网络
+    parseNetlistFile("buffer.sp", ckt, analyses); 
+
+    solver sol(ckt, analyses[0]);
+    double frequency = 10e6;
+    double period_T = 1.0 / frequency;
+    sol.PSS_solve_shooting(period_T, period_T / 100, 100, 1e-6);
+    return 0;
+}
