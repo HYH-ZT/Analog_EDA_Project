@@ -359,7 +359,6 @@ void solver::solve_linear_MNA_Gauss_Jacobi(){
     for (int iter = 0; iter < max_iterations; ++iter) {
 
 
-
         for (int i = 0; i < n; ++i) {
             double sum = J(i);
             for (int j = 0; j < n; ++j) {
@@ -367,6 +366,7 @@ void solver::solve_linear_MNA_Gauss_Jacobi(){
                     sum -= MNA_Y(i, j) * x_old(j);
                 }
             }
+
             if (std::abs(MNA_Y(i, i)) < 1e-12) {
                 // std::cout << "Warning: Near-zero diagonal element at row " << i << "\n";
                 x_new(i) = 0.0;
@@ -815,10 +815,10 @@ void solver::DC_solve() {
         // 4. 电源 stamp
         build_sources_MNA();
 
-        // // Debug: 输出当前迭代的 MNA 矩阵和 J 向量
-        // std::cout << "Iteration " << iter + 1 << ":\n";
-        // std::cout << "MNA_Y:\n" << MNA_Y << "\n";
-        // std::cout << "J:\n" << J << "\n";
+        // Debug: 输出当前迭代的 MNA 矩阵和 J 向量
+        std::cout << "Iteration " << iter + 1 << ":\n";
+        std::cout << "MNA_Y:\n" << MNA_Y << "\n";
+        std::cout << "J:\n" << J << "\n";
 
         // 5. 求解线性方程
         //保存旧节点电压用于收敛性检查
@@ -826,7 +826,7 @@ void solver::DC_solve() {
         solve_linear_MNA();
 
         // // Debug: 输出当前迭代的节点电压
-        // std::cout << "Node Voltages:\n" << node_voltages << std::endl << std::endl; 
+        std::cout << "Node Voltages:\n" << node_voltages << std::endl << std::endl; 
 
         // 6. 检查收敛性
         double max_diff = (node_voltages - old_node_voltages).cwiseAbs().maxCoeff();
