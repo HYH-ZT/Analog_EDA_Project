@@ -5,6 +5,7 @@
 #include <map>
 #include <string>
 #include <fstream>
+#include <chrono>
 
 
 solver::solver(circuit& ckt_, analysis& analysis_, 
@@ -76,7 +77,10 @@ void solver::solve_linear_MNA_Gauss(){
             MNA_Y.row(k).swap(MNA_Y.row(max_row));
             std::swap(b(k), b(max_row));
         }
-        //消元过程
+        // //消元过程
+        // //Debug:输出交换后的MNA_Y
+        // std::cout << MNA_Y << std::endl;
+        // std::cout << b << std::endl;
         for (int i = k + 1; i < n; ++i){
             double factor = MNA_Y(i, k) / MNA_Y(k, k);
             MNA_Y.row(i) -= factor * MNA_Y.row(k);
@@ -97,6 +101,17 @@ void solver::solve_linear_MNA_Gauss(){
     node_voltages.resize(ckt.node_map.size() - 1);
     for (int i = 0; i < ckt.node_map.size() - 1; ++i){
         node_voltages[i] = x(i);
+    }
+    //如果有额外的变量（如支路电流），也存储起来
+    if (x.size() > ckt.node_map.size() - 1) {
+        branch_currents.resize(x.size() - (ckt.node_map.size() - 1));
+        for (int i = ckt.node_map.size() - 1; i < x.size(); ++i) {
+            branch_currents[i - (ckt.node_map.size() - 1)] = x(i);
+        }
+        // std::cout << "Branch Currents:\n";
+        // for (int i = 0; i < branch_currents.size(); ++i) {
+        //     std::cout << "I" << i << ": " << branch_currents[i] << " A\n";
+        // }
     }
 }
 
@@ -359,6 +374,7 @@ void solver::solve_linear_MNA_Gauss_Jacobi(){
     for (int iter = 0; iter < max_iterations; ++iter) {
 
 
+
         for (int i = 0; i < n; ++i) {
             double sum = J(i);
             for (int j = 0; j < n; ++j) {
@@ -366,7 +382,6 @@ void solver::solve_linear_MNA_Gauss_Jacobi(){
                     sum -= MNA_Y(i, j) * x_old(j);
                 }
             }
-
             if (std::abs(MNA_Y(i, i)) < 1e-12) {
                 // std::cout << "Warning: Near-zero diagonal element at row " << i << "\n";
                 x_new(i) = 0.0;
@@ -478,11 +493,13 @@ void solver::build_linear_MNA(bool in_tran){
         if (c == 'L' && in_tran == false){
             //电感短路，视为电压为0的电压源
             device source;
-            source.name = "L_short_" + dev.name;
+            source.name = "VL_short_" + dev.name;
             source.type = "V_DC";
             source.nodes = dev.nodes;
             source.parameters["DC"] = 0.0;
             source.original_device_name = dev.name; // 标记为电感的等效器件
+            //保存指向该电感器件的指针，以便后续更新电流
+            source.original_device_ptr = &dev;
             ckt.sources.push_back(source);
         }
     }
@@ -693,6 +710,7 @@ void solver::build_sources_MNA(){
             int n1 = dev.nodes[0];
             int n2 = dev.nodes[1];
             double value = dev.parameters["DC"];
+ 
             //先引入支路电流变量，从n1流向n2
             int new_var_index = MNA_Y.rows();
             MNA_Y.conservativeResize(new_var_index + 1, new_var_index + 1);
@@ -700,7 +718,7 @@ void solver::build_sources_MNA(){
             MNA_Y.col(new_var_index).setZero();
             J.conservativeResize(new_var_index + 1);
             J(new_var_index) = value;
-            //记录改电压源对应的支路电流变量索引
+            //记录改电压源对应的支路电流变量索引，从序号0开始
             dev.branch_current_index = new_var_index- ((int)ckt.node_list.size() - 1);
             //如果需要打印支路电流，存在ckt.print_branch_current_indices,需要减去节点数偏移
             if(dev.printI){
@@ -709,6 +727,110 @@ void solver::build_sources_MNA(){
             // 如果是瞬态等效电压源，更新动态器件映射
             if (!dev.original_device_name.empty()) {
                 dynamic_device_current_map[dev.original_device_name] = new_var_index- ((int)ckt.node_list.size() - 1);
+            }
+            //如果是电感的等效电压源，保存指向该电感器件的指针，以便后续更新电流
+            if (dev.original_device_ptr) {
+                dev.original_device_ptr->branch_current_index = new_var_index- ((int)ckt.node_list.size() - 1);
+            }
+            //KVL方程
+            if (n1 != 0){
+                MNA_Y(new_var_index, n1 - 1) = 1;
+                MNA_Y(n1 - 1, new_var_index) = 1;
+            }
+            if (n2 != 0){
+                MNA_Y(new_var_index, n2 - 1) = -1;
+                MNA_Y(n2 - 1, new_var_index) = -1;
+            }
+
+
+            // //引入辅助变量和KVL方程
+            // if (n1 == 0){
+            //     //节点n2电压为-value
+            //     J(n2 - 1) = -value;
+            //     MNA_Y.row(n2 - 1).setZero();
+            //     MNA_Y(n2 - 1, n2 - 1) = 1;
+            //     //引入支路电流变量与新方程
+
+            // }
+            // else if (n2 == 0){
+            //     //节点n1电压为value
+            //     J(n1 - 1) = value;
+            //     MNA_Y.row(n1 - 1).setZero();
+            //     MNA_Y(n1 - 1, n1 - 1) = 1;
+            // }
+            // else{
+            //     //引入支路电流变量与新方程
+            //     int new_var_index = MNA_Y.rows();
+            //     MNA_Y.conservativeResize(new_var_index + 1, new_var_index + 1);
+            //     MNA_Y.row(new_var_index).setZero();
+            //     MNA_Y.col(new_var_index).setZero();
+            //     J.conservativeResize(new_var_index + 1);
+            //     J(new_var_index) = value;
+            //     //KVL方程
+            //     MNA_Y(new_var_index, n1 - 1) = 1;
+            //     MNA_Y(new_var_index, n2 - 1) = -1;
+            //     //支路电流对节点的贡献
+            //     MNA_Y(n1 - 1, new_var_index) = 1;
+            //     MNA_Y(n2 - 1, new_var_index) = -1;
+            // }
+        }
+        if (c == 'I'){
+            //独立电流源
+            int n1 = dev.nodes[0];
+            int n2 = dev.nodes[1];
+            double value = dev.parameters["DC"];
+            if (n1 != 0){
+                J(n1 - 1) -= value; //流出节点为负
+            }
+            if (n2 != 0){
+                J(n2 - 1) += value; //流入节点为正
+            }
+        }
+    }
+}
+
+
+void solver::build_sources_MNA(bool in_tran,double time){
+    //清空打印支路电流索引
+    ckt.print_branch_current_indices.clear();
+    for (auto &dev : ckt.sources){
+        char c = toupper(dev.name[0]);
+        //独立电压源
+        if (c == 'V'){
+            int n1 = dev.nodes[0];
+            int n2 = dev.nodes[1];
+            double value = dev.parameters["DC"];
+            if(in_tran) {
+                //瞬态分析时，处理瞬态电压源
+                if (dev.type == "V_SIN"){
+                    //正弦波电压源
+                    double A = dev.parameters["AMP"];
+                    double FREQ = dev.parameters["FREQ"];
+                    double PHASE = dev.parameters["PHASE"];
+                    double DC = dev.parameters["DC"];
+                    value = DC + A * sin(2 * M_PI * FREQ * time + PHASE * M_PI / 180.0);
+                }
+            }
+            //先引入支路电流变量，从n1流向n2
+            int new_var_index = MNA_Y.rows();
+            MNA_Y.conservativeResize(new_var_index + 1, new_var_index + 1);
+            MNA_Y.row(new_var_index).setZero();
+            MNA_Y.col(new_var_index).setZero();
+            J.conservativeResize(new_var_index + 1);
+            J(new_var_index) = value;
+            //记录改电压源对应的支路电流变量索引，从序号0开始
+            dev.branch_current_index = new_var_index- ((int)ckt.node_list.size() - 1);
+            //如果需要打印支路电流，存在ckt.print_branch_current_indices,需要减去节点数偏移
+            if(dev.printI){
+                ckt.print_branch_current_indices.push_back(new_var_index - ((int)ckt.node_list.size() - 1));
+            }
+            // 如果是瞬态等效电压源，更新动态器件映射
+            if (!dev.original_device_name.empty()) {
+                dynamic_device_current_map[dev.original_device_name] = new_var_index- ((int)ckt.node_list.size() - 1);
+            }
+            //如果是电感的等效电压源，保存指向该电感器件的指针，以便后续更新电流
+            if (dev.original_device_ptr) {
+                dev.original_device_ptr->branch_current_index = new_var_index- ((int)ckt.node_list.size() - 1);
             }
             //KVL方程
             if (n1 != 0){
@@ -815,10 +937,10 @@ void solver::DC_solve() {
         // 4. 电源 stamp
         build_sources_MNA();
 
-        // Debug: 输出当前迭代的 MNA 矩阵和 J 向量
-        std::cout << "Iteration " << iter + 1 << ":\n";
-        std::cout << "MNA_Y:\n" << MNA_Y << "\n";
-        std::cout << "J:\n" << J << "\n";
+        // // Debug: 输出当前迭代的 MNA 矩阵和 J 向量
+        // std::cout << "Iteration " << iter + 1 << ":\n";
+        // std::cout << "MNA_Y:\n" << MNA_Y << "\n";
+        // std::cout << "J:\n" << J << "\n";
 
         // 5. 求解线性方程
         //保存旧节点电压用于收敛性检查
@@ -826,7 +948,7 @@ void solver::DC_solve() {
         solve_linear_MNA();
 
         // // Debug: 输出当前迭代的节点电压
-        std::cout << "Node Voltages:\n" << node_voltages << std::endl << std::endl; 
+        // std::cout << "Node Voltages:\n" << node_voltages << std::endl << std::endl; 
 
         // 6. 检查收敛性
         double max_diff = (node_voltages - old_node_voltages).cwiseAbs().maxCoeff();
@@ -852,18 +974,18 @@ void solver::DC_solve() {
         //     }
         // }
 
-    //展示节点电压结果
-    std::cout << "DC Analysis Node Voltages:\n";
-    for (const auto& pair : ckt.node_map){
-        const std::string& node_name = pair.first;
-        int node_id = pair.second;
-        if (node_id == 0){
-            std::cout << "Node " << node_name << " (ID " << node_id << "): 0 V (Ground)\n";
-        }
-        else{
-            std::cout << "Node " << node_name << " (ID " << node_id << "): " << node_voltages[node_id - 1] << " V\n";
-        }
-    }
+    // //展示节点电压结果
+    // std::cout << "DC Analysis Node Voltages:\n";
+    // for (const auto& pair : ckt.node_map){
+    //     const std::string& node_name = pair.first;
+    //     int node_id = pair.second;
+    //     if (node_id == 0){
+    //         std::cout << "Node " << node_name << " (ID " << node_id << "): 0 V (Ground)\n";
+    //     }
+    //     else{
+    //         std::cout << "Node " << node_name << " (ID " << node_id << "): " << node_voltages[node_id - 1] << " V\n";
+    //     }
+    // }
 }
 
 // 使用节点名和电压值的映射来设置初值
@@ -951,14 +1073,14 @@ void solver::DC_solve(const std::map<std::string, double>& node_voltage_map, boo
 }
 
 //根据给定的初始节点电压进行直流求解
-void solver::DC_solve(const Eigen::VectorXd& initial_node_voltages, bool in_tran) {
+void solver::DC_solve(const Eigen::VectorXd& initial_node_voltages, bool in_tran,double time) {
     const int maxNewtonIter = 50;
     const double tol = 1e-9;
 
     // 1. 只构建一次线性矩阵
     build_linear_MNA(in_tran);
 
-        // // Debug: 输出当前迭代的 MNA 矩阵和 J 向量
+        // // // Debug: 输出当前迭代的 MNA 矩阵和 J 向量
 
         // std::cout << "liner_Y:\n" << liner_Y << "\n";
         // std::cout << "J:\n" << J << "\n";
@@ -972,6 +1094,11 @@ void solver::DC_solve(const Eigen::VectorXd& initial_node_voltages, bool in_tran
         MNA_Y = liner_Y;
         J = Eigen::VectorXd::Zero(MNA_Y.rows());
 
+        // //Debug: 输出当前MNA
+        // std::cout << "Iteration " << iter + 1 << ":\n";
+        // std::cout << "MNA_Y before nonlinear stamp:\n" << MNA_Y << "\n";
+        // std::cout << "J before nonlinear stamp:\n" << J << "\n";
+
         // 3. MOS stamp
         build_nonlinear_MNA();
 
@@ -981,7 +1108,7 @@ void solver::DC_solve(const Eigen::VectorXd& initial_node_voltages, bool in_tran
         // std::cout << "J:\n" << J << "\n";
 
         // 4. 电源 stamp
-        build_sources_MNA();
+        build_sources_MNA(in_tran,time);
 
         // // Debug: 输出当前迭代的 MNA 矩阵和 J 向量
         // std::cout << "Source " << iter + 1 << ":\n";
@@ -1003,7 +1130,7 @@ void solver::DC_solve(const Eigen::VectorXd& initial_node_voltages, bool in_tran
         }
         // std::cout << "Max voltage change: " << max_diff << "\n";
         if (max_diff < tol) {
-            std::cout << "Converged after " << iter + 1 << " iterations.\n";
+            // std::cout << "Converged after " << iter + 1 << " iterations.\n";
             break;
         }
     }
@@ -1081,8 +1208,6 @@ void solver::build_transient_ckt(double tstep){
             if (C <= 0) {
                 continue; // 跳过无效的电容值
             }
-            double R_eq = tstep / (2.0 * C);
-            
 
             //获取上一时刻支路电流
             //直接从映射中获取该电容对应的支路电流
@@ -1103,31 +1228,64 @@ void solver::build_transient_ckt(double tstep){
             // 重新整理：i_C(t+dt) = (2C/dt) * (v_C(t+dt) - v_C(t)) - i_C(t)
             // 等效电路：v_C(t+dt) = R_eq * i_C(t+dt) + V_eq
             // 其中：R_eq = dt/(2C), V_eq = v_C(t) - R_eq * i_C(t)
-            double V_eq = (V1_prev - V2_prev) + R_eq * I_prev;
+            //前向欧拉法等效参数
+            double R_eq, V_eq;
+            if(transient_method == TransientMethod::FORWARD_EULER){
+                R_eq = 0.0;
+                V_eq = (V1_prev - V2_prev) + (tstep / C) * I_prev;
+            }
+            //后退欧拉法等效参数
+            else if(transient_method == TransientMethod::BACKWARD_EULER){
+                R_eq = tstep / C;
+                V_eq = (V1_prev - V2_prev);
+            }
+            else{
+                //默认使用梯形法
+                R_eq = tstep / (2.0 * C);
+                V_eq = (V1_prev - V2_prev) + R_eq * I_prev;
+            }
             
-            // 创建中间节点用于串联
-            std::string mid_node_name = dev.name + "_transient_mid";
-            int mid_node_id = ckt.getNodeID(mid_node_name);
-            
-            // 创建等效电阻 (从n1到中间节点)
-            device equiv_resistor;
-            equiv_resistor.name = "R" + dev.name + "_transient_R";
-            equiv_resistor.type = "R";
-            equiv_resistor.nodes = {n1, mid_node_id};
-            equiv_resistor.node_names = {dev.node_names[0], mid_node_name};
-            equiv_resistor.parameters["value"] = R_eq;
-            equiv_resistor.original_device_name = dev.name; // 电容等效器件标识
-            ckt.linear_devices.push_back(equiv_resistor);
-            
-            // 创建等效电压源 (从中间节点到n2)
-            device equiv_voltage;
-            equiv_voltage.name = "V" + dev.name + "_transient_V";
-            equiv_voltage.type = "V";
-            equiv_voltage.nodes = {mid_node_id, n2};
-            equiv_voltage.node_names = {mid_node_name, dev.node_names[1]};
-            equiv_voltage.parameters["DC"] = V_eq;
-            equiv_voltage.original_device_name = dev.name; // 电容等效器件标识
-            ckt.sources.push_back(equiv_voltage);
+            //如果R_eq为0，表示纯电压源，直接添加电压源
+            if (R_eq == 0.0){
+                device equiv_voltage;
+                equiv_voltage.name = "V" + dev.name + "_transient_V";
+                equiv_voltage.type = "V";
+                equiv_voltage.nodes = {n1, n2};
+                equiv_voltage.node_names = {dev.node_names[0], dev.node_names[1]};
+                equiv_voltage.parameters["DC"] = V_eq;
+                equiv_voltage.original_device_name = dev.name; // 电容等效器件标识
+                ckt.sources.push_back(equiv_voltage);
+                continue;
+            }
+            else if (R_eq < 0.0){
+                //无效电阻，跳过
+                continue;
+            }
+            else{
+                // 创建中间节点用于串联
+                std::string mid_node_name = dev.name + "_transient_mid";
+                int mid_node_id = ckt.getNodeID(mid_node_name);
+                
+                // 创建等效电阻 (从n1到中间节点)
+                device equiv_resistor;
+                equiv_resistor.name = "R" + dev.name + "_transient_R";
+                equiv_resistor.type = "R";
+                equiv_resistor.nodes = {n1, mid_node_id};
+                equiv_resistor.node_names = {dev.node_names[0], mid_node_name};
+                equiv_resistor.parameters["value"] = R_eq;
+                equiv_resistor.original_device_name = dev.name; // 电容等效器件标识
+                ckt.linear_devices.push_back(equiv_resistor);
+                
+                // 创建等效电压源 (从中间节点到n2)
+                device equiv_voltage;
+                equiv_voltage.name = "V" + dev.name + "_transient_V";
+                equiv_voltage.type = "V";
+                equiv_voltage.nodes = {mid_node_id, n2};
+                equiv_voltage.node_names = {mid_node_name, dev.node_names[1]};
+                equiv_voltage.parameters["DC"] = V_eq;
+                equiv_voltage.original_device_name = dev.name; // 电容等效器件标识
+                ckt.sources.push_back(equiv_voltage);
+            }
         }
         
         if (c == 'L') {
@@ -1145,11 +1303,12 @@ void solver::build_transient_ckt(double tstep){
             if (L <= 0) {
                 continue; // 跳过无效的电感值
             }
-            double R_eq = 2 * L / tstep;
+
             
             // 获取上一时刻的电感电流
             // 直接从映射中获取该电感对应的支路电流
             double I_prev = 0.0;
+            //这里用map查找，可能会慢一些，改进方法是直接保存动态器件的支路电流索引
             auto it = dynamic_device_current_map.find(dev.name);
             if (it != dynamic_device_current_map.end() && 
                 it->second >= 0 && it->second < branch_currents.size()) {
@@ -1159,23 +1318,52 @@ void solver::build_transient_ckt(double tstep){
 
             double V1_prev = V_prev(n1);
             double V2_prev = V_prev(n2);
-            
-            double V_eq = -2 * L * I_prev / tstep - (V1_prev - V2_prev);
-            
-            // 创建中间节点用于串联
+
+            double R_eq, V_eq,I_eq;
+            if(transient_method == TransientMethod::FORWARD_EULER){
+                R_eq = -1; //表示无穷大
+                V_eq = 0;
+                I_eq = I_prev + (tstep / L) * (V1_prev - V2_prev);
+            }
+            else if(transient_method == TransientMethod::BACKWARD_EULER){
+                R_eq = L / tstep;
+                V_eq = 0;
+                I_eq = I_prev;
+            }
+            else{
+                // //使用梯形法戴维南等效参数
+                // R_eq = 2 * L / tstep;
+                // V_eq = -2 * L * I_prev / tstep - (V1_prev - V2_prev);
+                //使用梯形法诺顿等效参数
+                R_eq = 2 * L / tstep;
+                V_eq = 0;
+                I_eq = I_prev + (tstep / (2.0 * L)) * (V1_prev - V2_prev);
+            }
+            //如果R_eq为-1，表示纯电流源，直接添加电流源
+            // 创建中间节点用于串联电压源，用于记录电流
             std::string mid_node_name = dev.name + "_transient_mid";
             int mid_node_id = ckt.getNodeID(mid_node_name);
             
+            // 创建等效电流源和与其并联电阻 (从n1到中间节点)
+            device equiv_current;
+            equiv_current.name = "I" + dev.name + "_transient_I";
+            equiv_current.type = "I";
+            equiv_current.nodes = {n1, mid_node_id};
+            equiv_current.node_names = {dev.node_names[0], mid_node_name};
+            equiv_current.parameters["DC"] = I_eq;
+            equiv_current.original_device_name = dev.name; // 电感等效器件标识
+            ckt.sources.push_back(equiv_current);
             // 创建等效电阻 (从n1到中间节点)
-            device equiv_resistor;
-            equiv_resistor.name = "R" + dev.name + "_transient_R";
-            equiv_resistor.type = "R";
-            equiv_resistor.nodes = {n1, mid_node_id};
-            equiv_resistor.node_names = {dev.node_names[0], mid_node_name};
-            equiv_resistor.parameters["value"] = R_eq;
-            equiv_resistor.original_device_name = dev.name; // 电感等效器件标识
-            ckt.linear_devices.push_back(equiv_resistor);
-            
+            if(R_eq > 0.0){
+                device equiv_resistor;
+                equiv_resistor.name = "R" + dev.name + "_transient_R";
+                equiv_resistor.type = "R";
+                equiv_resistor.nodes = {n1, mid_node_id};
+                equiv_resistor.node_names = {dev.node_names[0], mid_node_name};
+                equiv_resistor.parameters["value"] = R_eq;
+                equiv_resistor.original_device_name = dev.name; // 电感等效器件标识
+                ckt.linear_devices.push_back(equiv_resistor);
+            }
             // 创建等效电压源 (从中间节点到n2)
             device equiv_voltage;
             equiv_voltage.name = "V" + dev.name + "_transient_V";
@@ -1223,40 +1411,44 @@ void solver::TRAN_solve(){
     int steps = static_cast<int>(tstop / tstep);
     for (int step = 0; step <= steps; ++step){
         double time = step * tstep;
-        std::cout << "Transient Analysis Time: " << time << " s\n";
+        // std::cout << "Transient Analysis Time: " << time << " s\n";
         //构建瞬态分析电路
         build_transient_ckt(tstep);
         
-        //Debug: 输出当前电路的线性器件和源列表
-        std::cout << "Linear Devices:\n";
-        for (const auto& dev : ckt.linear_devices) {
-            std::cout << "  " << dev.name << " (" << dev.type << ") Nodes: ";
-            for (const auto& node_name : dev.node_names) {
-                std::cout << node_name << " ";
-            }
-            std::cout << " Parameters: ";
-            for (const auto& param : dev.parameters) {
-                std::cout << param.first << "=" << param.second << " ";
-            }
-            std::cout << "\n";
-        }
-        std::cout << "Sources:\n";
-        for (const auto& dev : ckt.sources) {
-            std::cout << "  " << dev.name << " (" << dev.type << ") Nodes: ";
-            for (const auto& node_name : dev.node_names) {
-                std::cout << node_name << " ";
-            }
-            std::cout << " Parameters: ";
-            for (const auto& param : dev.parameters) {
-                std::cout << param.first << "=" << param.second << " ";
-            }
-            std::cout << "\n";
-        }
-        std::cout << "\n";
+        // //Debug: 输出当前电路的线性器件和源列表
+        // std::cout << "Linear Devices:\n";
+        // for (const auto& dev : ckt.linear_devices) {
+        //     std::cout << "  " << dev.name << " (" << dev.type << ") Nodes: ";
+        //     for (const auto& node_name : dev.node_names) {
+        //         std::cout << node_name << " ";
+        //     }
+        //     std::cout << " Parameters: ";
+        //     for (const auto& param : dev.parameters) {
+        //         std::cout << param.first << "=" << param.second << " ";
+        //     }
+        //     std::cout << "\n";
+        // }
+        // std::cout << "Sources:\n";
+        // for (const auto& dev : ckt.sources) {
+        //     std::cout << "  " << dev.name << " (" << dev.type << ") Nodes: ";
+        //     for (const auto& node_name : dev.node_names) {
+        //         std::cout << node_name << " ";
+        //     }
+        //     std::cout << " Parameters: ";
+        //     for (const auto& param : dev.parameters) {
+        //         std::cout << param.first << "=" << param.second << " ";
+        //     }
+        //     std::cout << "\n";
+        // }
+        // std::cout << "\n";
 
         //直接调用DC求解器
         //求解非线性MNA方程，以上次节点电压为初值
-        DC_solve(node_voltages, true);
+        DC_solve(node_voltages, true,time);
+
+        // //Debug: 输出MNA矩阵和J向量(注意DC_solve中会行交换MNA)
+        // std::cout << "MNA_Y at time " << time << " s:\n" << MNA_Y << "\n";
+        // std::cout << "J at time " << time << " s:\n" << J << "\n";
 
         // //Debug:展示节点电压结果
         // std::cout << "Node Voltages at time " << time << " s:\n";
@@ -1270,13 +1462,13 @@ void solver::TRAN_solve(){
         //         std::cout << "Node " << node_name << " (ID " << node_id << "): " << node_voltages[node_id - 1] << " V\n";
         //     }
         // }
-        //根据需要打印的变量，存到文件中
+        // 根据需要打印的变量，存到文件中
         {
             // 输出文件: transient_print.txt
             if (step == 0) {
                 std::ofstream hdr("transient_print.txt", std::ios::out);
                 hdr << "Time(s)";
-                for (int node_id : ckt.print_node_ids) {
+                for (int node_id : ckt.print_node_ids){
                     std::string name = "NODE";
                     if (node_id >= 0 && node_id < (int)ckt.node_list.size()) name = ckt.node_list[node_id];
                     hdr << "\tV(" << name << ")";
@@ -1307,8 +1499,6 @@ void solver::TRAN_solve(){
             out << "\n";
             out.close();
         }
-
-
     }
 }
     
@@ -1432,104 +1622,800 @@ void solver::TRAN_solve(double tstop, double tstep){
     }
 }
 
-// 运行一次瞬态，用给定初始条件 init_x，返回 T 处的节点电压
-Eigen::VectorXd solver::run_transient_once(double T, double tstep, const Eigen::VectorXd &init_x)
-{
-    // 设置初始节点电压
-    node_voltages = init_x;
 
-    // 计算步数
-    int steps = static_cast<int>(T / tstep);
+// HB分析
+void solver::hb_build_linear_MNA(){
+    //先对直流点构建线性MNA矩阵,只能进行一次，电感会贴出来很多个电压源
+    // build_linear_MNA(false);
+    //确保MNA_Y大小正确
+    MNA_Y = Eigen::MatrixXd::Zero(liner_Y.rows(), liner_Y.cols());
+    MNA_Y = liner_Y;
+    build_sources_MNA();
+    //这样就得到的MNA_Y大小就是每个频率点的矩阵大小
+    base_size = MNA_Y.rows();
+    //初始化多频率点的线性MNA矩阵,包含正负频率点
+    //每个频率点的矩阵大小为base_size * (num_harmonics + 1)
+    //这里的num_harmonics是指正频率点的数量，不包括直流点
+    hb_liner_Y = Eigen::MatrixXcd::Zero(base_size * (2*hb_params.num_harmonics+1), base_size * (2*hb_params.num_harmonics+1));
+    //初始化多频率点的线性J向量
+    hb_J = Eigen::VectorXcd::Zero(base_size * (2*hb_params.num_harmonics+1));
+    int node_list_size = ckt.node_list.size() -1; //不包括地节点
+    //把直流点的线性MNA矩阵放入多频率点矩阵的是中央位置
+    hb_liner_Y.block(hb_params.num_harmonics * base_size, hb_params.num_harmonics * base_size, base_size, base_size) = MNA_Y.cast<std::complex<double> >();
+    hb_J.segment(hb_params.num_harmonics * base_size, base_size) = J.cast<std::complex<double> >();
 
-    for (int step = 0; step <= steps; step++) {
-        double time = step * tstep;
-
-        // 构建瞬态分析电路
-        build_transient_ckt(tstep);
-
-        // 以当前 node_voltages 为初值求解非线性 MNA
-        DC_solve(node_voltages, true);
-
-        // node_voltages 会在 DC_solve 中被更新，无需额外处理
-        std::cout << node_voltages.size() << std::endl;
+    //对各个频率点进行线性MNA矩阵构建
+    for(int h = -hb_params.num_harmonics; h <= hb_params.num_harmonics; ++h){
+        if(h == 0) continue; //直流点已经处理过了
+        double omega;
+        omega = h * hb_params.fundamental_omega;
+        std::complex<double> jw(0.0, omega);
+        //初始化子MNA为0
+        Eigen::MatrixXcd Y_h = Eigen::MatrixXcd::Zero(base_size,base_size);
+        //对电容和电感进行频率域修正
+        for (const auto &dev : ckt.linear_devices) {
+            char c = toupper(dev.name[0]);
+            if(c == 'R'){
+                int n1 = dev.nodes[0];
+                int n2 = dev.nodes[1];
+                if (dev.parameters.find("value") == dev.parameters.end()) {
+                    continue; // 跳过没有value参数的器件
+                }
+                double R = dev.parameters.at("value");
+                if (R <= 0) {
+                    continue; // 跳过无效的电阻值
+                }
+                std::complex<double> Yr = 1.0 / R; // 电阻的导纳
+                if (n1 != 0) Y_h(n1 - 1, n1 - 1) += Yr;
+                if (n2 != 0) Y_h(n2 - 1, n2 - 1) += Yr;
+                if (n1 != 0 && n2 != 0) {
+                    Y_h(n1 - 1, n2 - 1) -= Yr;
+                    Y_h(n2 - 1, n1 - 1) -= Yr;
+                }
+            }
+            else if (c == 'C') {
+                int n1 = dev.nodes[0];
+                int n2 = dev.nodes[1];
+                if (dev.parameters.find("value") == dev.parameters.end()) {
+                    continue; // 跳过没有value参数的器件
+                }
+                double C = dev.parameters.at("value");
+                if (C <= 0) {
+                    continue; // 跳过无效的电容值
+                }
+                std::complex<double> Yc = jw * C; // 电容的导纳
+                if (n1 != 0) Y_h(n1 - 1, n1 - 1) += Yc;
+                if (n2 != 0) Y_h(n2 - 1, n2 - 1) += Yc;
+                if (n1 != 0 && n2 != 0) {
+                    Y_h(n1 - 1, n2 - 1) -= Yc;
+                    Y_h(n2 - 1, n1 - 1) -= Yc;
+                }
+            }
+            else if (c == 'L') {
+                int n1 = dev.nodes[0];
+                int n2 = dev.nodes[1];
+                if (dev.parameters.find("value") == dev.parameters.end()) {
+                    continue; // 跳过没有value参数的器件
+                }
+                double L = dev.parameters.at("value");
+                if (L <= 0) {
+                    continue; // 跳过无效的电感值
+                }
+                //电感引入电流支路，确定支路电流的行列号
+                int branch_index = dev.branch_current_index + node_list_size; //支路电流在MNA矩阵中的行列号
+                if (n1 != 0){
+                    Y_h(n1 - 1, branch_index) = 1;
+                    Y_h(branch_index, n1 - 1) = 1;
+                } 
+                if (n2 != 0){
+                    Y_h(n2 - 1, branch_index) = -1;
+                    Y_h(branch_index, n2 - 1) = -1;
+                }
+                Y_h(branch_index, branch_index) = -jw * L;
+            }
+        }
+        //将该频率点的线性MNA矩阵放入多频率点矩阵中
+        hb_liner_Y.block((h + hb_params.num_harmonics) * base_size, (h + hb_params.num_harmonics) * base_size, base_size, base_size) = Y_h;
     }
-
-    return node_voltages;   // 即 v(T)
+    // //Debug: 输出多频率点的线性MNA矩阵和J向量
+    // //输出到文件中查看
+    // std::ofstream out("hb_linear_MNA.txt");
+    // if (out.is_open()) {
+    //     out << "Harmonic Balance Linear MNA Matrix (Y):\n" << hb_liner_Y << "\n";
+    //     out << "Harmonic Balance Linear J Vector:\n" << hb_J << "\n";
+    //     out.close();
+    // } else {
+    //     std::cerr << "Error opening file for writing: hb_linear_MNA.txt\n";
+    // }
+    // std::cout << "Harmonic Balance Linear J Vector:\n" << hb_J << "\n";
+    // std::cout << "Harmonic Balance Linear MNA Matrix (Y):\n" << hb_liner_Y << "\n";
 }
 
-void solver::PSS_solve_shooting(double period_T, double tstep, int max_iters, double tol){
-    // 节点个数
-    int N = ckt.node_map.size() - 1;
-
-    // ---- Step 0：初始化初始条件 X0 ----
-    // 你可以用 DC 解，或者直接用 0
-    Eigen::VectorXd X0 = Eigen::VectorXd::Zero(N);
-
-    std::cout << "Shooting Method Start: N = " << N << "\n";
-
-    for (int iter = 0; iter < max_iters; iter++)
-    {
-        std::cout << "=== Shooting Iteration " << iter << " ===\n";
-
-        // ---- Step1：从 X0 出发运行瞬态，得到周期末 v(T) ----
-        Eigen::VectorXd XT = run_transient_once(period_T, tstep, X0);
-
-        // ---- Step2：误差 F = XT - X0 ----
-        if (XT.size() != X0.size()) {
-            X0 = Eigen::VectorXd::Zero(XT.size());
+//构建普通的DFT和IDFT变换矩阵
+void solver::hb_initialize_DFT_matrices() {
+    int num_harmonics = hb_params.num_harmonics;
+    int N = 2 * num_harmonics + 1; // 总频率点数 = 时域点数
+    double f0 = 1.0; // 基频（归一化）
+    double T = 1.0 / f0; // 周期
+    
+    hb_DFT_matrix = Eigen::MatrixXcd::Zero(N, N);
+    hb_iDFT_matrix = Eigen::MatrixXcd::Zero(N, N);
+    
+    // ============= DFT矩阵 (时域→频域) =============
+    // 公式：DFT(k, n) = exp(-j·2π·f_k·t_n) / N
+    // 其中 f_k = (k - num_harmonics) * f0
+    //      t_n = n * T / N
+    
+    for(int k = 0; k < N; ++k) {
+        // 频率索引 m = -num_harmonics, ..., 0, ..., +num_harmonics
+        int m = k - num_harmonics;
+        double freq = m * f0;
+        
+        for(int n = 0; n < N; ++n) {
+            // 时间点 t = n * T / N
+            double t = n * T / N;
+            double theta = -2.0 * M_PI * freq * t;
+            hb_DFT_matrix(k, n) = std::exp(std::complex<double>(0.0, theta)) / static_cast<double>(N);
         }
-        Eigen::VectorXd F = XT - X0;
-        double err = F.norm();
+    }
+    
+    // ============= IDFT矩阵 (频域→时域) =============
+    // 公式：IDFT(n, k) = exp(+j·2π·f_k·t_n)
+    // 注意：DFT和IDFT通常是互逆的，所以IDFT不需要除以N
+    
+    for(int n = 0; n < N; ++n) {
+        double t = n * T / N;
+        
+        for(int k = 0; k < N; ++k) {
+            int m = k - num_harmonics;
+            double freq = m * f0;
+            double theta = 2.0 * M_PI * freq * t;
+            hb_iDFT_matrix(n, k) = std::exp(std::complex<double>(0.0, theta));
+        }
+    }
+    
+}
 
-        std::cout << "Error norm = " << err << "\n";
+//构建FT变换矩阵
+void solver::hb_build_TF_matrix(){
 
-        // ---- Step3：检查收敛 ----
-        if (err < tol) {
-            std::cout << "Shooting method converged.\n";
-            node_voltages = XT;    // 最终稳态
+    int N = 2 * hb_params.num_harmonics + 1;
+    //初始化TF矩阵和iTF矩阵
+    hb_T2F_matrix = Eigen::MatrixXcd::Zero(base_size * N, base_size * N);
+    hb_F2T_matrix = Eigen::MatrixXcd::Zero(base_size * N, base_size * N);
+    //构建TF矩阵
+    for(int i = 0; i < base_size; ++i){
+        for(int k = 0; k < N; ++k){
+            for(int n = 0; n < N; ++n){
+                hb_T2F_matrix(i + k * base_size, i + n * base_size) = hb_DFT_matrix(k, n);
+                hb_F2T_matrix(i + n * base_size, i + k * base_size) = hb_iDFT_matrix(n, k);
+            }
+        }
+    }
+}
+
+//实现将时域的解进行DFT变换
+Eigen::VectorXcd solver::hb_DFT(Eigen::VectorXcd xt){
+    //xt长度为base_size * (2*hb_params.num_harmonics+1)，且同一个时刻的变量放在一起，同一变量不同时刻的值相距base_size
+    int N = 2 * hb_params.num_harmonics + 1;
+    Eigen::VectorXcd result(base_size * N);
+    for(int i = 0; i < base_size; ++i){
+        //提取第i个变量的时域序列
+        Eigen::VectorXcd x_t(N);
+        for(int n = 0; n < N; ++n){
+            x_t(n) = xt(i + n * base_size);
+        }
+        //进行DFT变换
+        Eigen::VectorXcd x_w = hb_DFT_matrix * x_t;
+        //放回结果向量
+        for(int k = 0; k < N; ++k){
+            result(i + k * base_size) = x_w(k);
+        }
+    }
+    return result;
+}
+
+//实现将HB的解进行逆DFT变换
+Eigen::VectorXcd solver::hb_iDFT(Eigen::VectorXcd xw)
+{
+    int N = 2 * hb_params.num_harmonics + 1;
+    Eigen::VectorXcd result(base_size * N);
+    for(int i = 0; i < base_size; ++i){
+        //提取第i个变量的频域序列
+        Eigen::VectorXcd x_w(N);
+        for(int k = 0; k < N; ++k){
+            x_w(k) = xw(i + k * base_size);
+        }
+        //进行IDFT变换
+        Eigen::VectorXcd x_t = hb_iDFT_matrix * x_w;
+        //放回结果向量
+        for(int n = 0; n < N; ++n){
+            result(i + n * base_size) = x_t(n);
+        }
+    }
+    return result;
+}
+
+//加入sources到MNA和J中
+void solver::hb_build_sources_MNA(){
+    //确保hb_MNA_Y大小正确,此时hb_liner_Y已经构建完成
+    hb_MNA_Y = hb_liner_Y;
+    for (auto &dev : ckt.sources){
+        char c = toupper(dev.name[0]);
+        //独立电压源
+        if (c == 'V'){
+            int n1 = dev.nodes[0];
+            int n2 = dev.nodes[1];
+            //判断是否是sin源
+            if(dev.type == "V_SIN"){
+                //根据其频率，计算对应的频率点索引
+                double freq = dev.parameters["FREQ"];
+                int harmonic_index = static_cast<int>(std::round(freq / (hb_params.fundamental_omega / (2.0 * M_PI))));
+                if(harmonic_index < -hb_params.num_harmonics || harmonic_index > hb_params.num_harmonics){
+                    //频率点超出范围，跳过
+                    continue;
+                }
+                double vdc = dev.parameters["DC"];
+                double amplitude = dev.parameters["AMP"];
+                double phase_deg = dev.parameters["PHASE"];
+                double phase_rad = phase_deg * M_PI / 180.0 - M_PI/2.0; //转换为弧度，并减去90度，变为正弦波初相位
+                //在对应的正负频率点加入电压源贡献
+                int pos_index = (harmonic_index + hb_params.num_harmonics) * base_size;
+                int neg_index = (-harmonic_index + hb_params.num_harmonics) * base_size;
+                //在hb_MNA_Y中加入电压源支路,在DC分析中，已经得到了支路电流变量索引
+                int branch_index = dev.branch_current_index + (ckt.node_list.size() - 1); //支路电流在MNA矩阵中的行列号
+                //对所有频率遍历，加入KVL方程
+                for(int h = -hb_params.num_harmonics; h <= hb_params.num_harmonics; ++h){
+                    int row_index = (h + hb_params.num_harmonics) * base_size + branch_index;
+                    //直流点单独处理
+                    //同时对于Jacobian矩阵也加入
+                    if(h == 0){
+                        if (n1 != 0){
+                            hb_MNA_Y(row_index, (h + hb_params.num_harmonics) * base_size + n1 - 1) = 1;
+                            hb_MNA_Y((h + hb_params.num_harmonics) * base_size + n1 - 1, row_index) = 1;
+                            hb_jacobian(row_index, (h + hb_params.num_harmonics) * base_size + n1 - 1) = 1;
+                            hb_jacobian((h + hb_params.num_harmonics) * base_size + n1 - 1, row_index) = 1;
+                        }
+                        if (n2 != 0){
+                            hb_MNA_Y(row_index, (h + hb_params.num_harmonics) * base_size + n2 - 1) = -1;
+                            hb_MNA_Y((h + hb_params.num_harmonics) * base_size + n2 - 1, row_index) = -1;
+                            hb_jacobian(row_index, (h + hb_params.num_harmonics) * base_size + n2 - 1) = -1;
+                            hb_jacobian((h + hb_params.num_harmonics) * base_size + n2 - 1, row_index) = -1;
+                        }
+                        //在J向量中加入电压源值
+                        hb_J(row_index) = vdc;
+                        continue;
+                    }
+                    if (n1 != 0){
+                        hb_MNA_Y(row_index, (h + hb_params.num_harmonics) * base_size + n1 - 1) = 1;
+                        hb_MNA_Y((h + hb_params.num_harmonics) * base_size + n1 - 1, row_index) = 1;
+                        hb_jacobian(row_index, (h + hb_params.num_harmonics) * base_size + n1 - 1) = 1;
+                        hb_jacobian((h + hb_params.num_harmonics) * base_size + n1 - 1, row_index) = 1;
+                    }
+                    if (n2 != 0){
+                        hb_MNA_Y(row_index, (h + hb_params.num_harmonics) * base_size + n2 - 1) = -1;
+                        hb_MNA_Y((h + hb_params.num_harmonics) * base_size + n2 - 1, row_index) = -1;
+                        hb_jacobian(row_index, (h + hb_params.num_harmonics) * base_size + n2 - 1) = -1;
+                        hb_jacobian((h + hb_params.num_harmonics) * base_size + n2 - 1, row_index) = -1;
+                    }
+                    //在J向量中加入电压源值，只在对应频率点加入，其余为0
+                    if(h == harmonic_index){
+                        hb_J(row_index) = std::polar(amplitude / 2.0, phase_rad); //正频率点
+                    }
+                    else if(h == -harmonic_index){
+                        hb_J(row_index) = std::polar(amplitude / 2.0, -phase_rad); //负频率点
+                    }
+                    else{
+                        hb_J(row_index) = 0;
+                    }
+                }
+                
+            }
+            else if(dev.type == "V_DC"){
+                //直流电压源，放在直流点
+                double value = dev.parameters["DC"];
+                int branch_index = dev.branch_current_index + (ckt.node_list.size() - 1); //支路电流在MNA矩阵中的行列号
+                //在hb_MNA_Y中加入电压源支路,对所有频率遍历，加入KVL方程
+                for(int h = -hb_params.num_harmonics; h <= hb_params.num_harmonics; ++h){
+                    int row_index = (h + hb_params.num_harmonics) * base_size + branch_index;
+                    if (n1 != 0){
+                        hb_MNA_Y(row_index, (h + hb_params.num_harmonics) * base_size + n1 - 1) = 1;
+                        hb_MNA_Y((h + hb_params.num_harmonics) * base_size + n1 - 1, row_index) = 1;
+                        hb_jacobian(row_index, (h + hb_params.num_harmonics) * base_size + n1 - 1) = 1;
+                        hb_jacobian((h + hb_params.num_harmonics) * base_size + n1 - 1, row_index) = 1;
+                    }
+                    if (n2 != 0){
+                        hb_MNA_Y(row_index, (h + hb_params.num_harmonics) * base_size + n2 - 1) = -1;
+                        hb_MNA_Y((h + hb_params.num_harmonics) * base_size + n2 - 1, row_index) = -1;
+                        hb_jacobian(row_index, (h + hb_params.num_harmonics) * base_size + n2 - 1) = -1;
+                        hb_jacobian((h + hb_params.num_harmonics) * base_size + n2 - 1, row_index) = -1;
+                    }
+                    //在J向量中加入电压源值，只在直流点加入，其余为0
+                    if(h == 0){
+                        hb_J(row_index) = value;
+                    }
+                    else{
+                        hb_J(row_index) = 0;
+                    }
+                }
+            }
+        }
+        if (c == 'I'){
+            //独立电流源
+            int n1 = dev.nodes[0];
+            int n2 = dev.nodes[1];
+            double value = dev.parameters["DC"];
+            //在hb_J中加入电流源贡献，只在直流点加入
+            hb_J(hb_params.num_harmonics * base_size + n1 - 1) -= value;
+            hb_J(hb_params.num_harmonics * base_size + n2 - 1) += value;
+        }
+    }
+}
+
+//非线性器件的HB贡献
+void solver::hb_build_nonlinear_MNA(){
+    // 从上一次的频域解 hb_xw 计算时域解 hb_xt。
+    // 注意：不要在这里重置 hb_xw（它在 PSS 入口处初始化一次），
+    // 否则会改变 hb_xw 的尺寸导致后续比较/收敛判断出错。
+    hb_xt = hb_iDFT(hb_xw);
+    //初始化时域雅可比矩阵
+    t_jacobian = Eigen::MatrixXd::Zero(base_size * (2 * hb_params.num_harmonics + 1), base_size * (2 * hb_params.num_harmonics + 1));
+    //初始化时域J向量和频域J向量
+    hb_J = Eigen::VectorXcd::Zero(base_size * (2 * hb_params.num_harmonics + 1));
+    //对非线性器件进行多频率点的贡献构建
+    Eigen::VectorXd I_dev_time = Eigen::VectorXd::Zero(base_size * (2 * hb_params.num_harmonics + 1));
+    for (const auto &dev : ckt.nonlinear_devices) {
+        char c = toupper(dev.name[0]);
+        //初始化电流向量
+        if(c == 'M'){
+            // //Debug: 输出器件信息
+            // std::cout << "Processing Nonlinear Device: " << dev.name << " Type: " << dev.type << "\n";
+            //读取器件参数，不考虑body节点
+            int n1 = dev.nodes[0];
+            int ng0 = dev.nodes[1];
+            int n2 = dev.nodes[2];
+            double W = dev.parameters.at("W");
+            double L = dev.parameters.at("L");
+            double type = dev.parameters.at("TYPE"); //1 for NMOS, -1 for PMOS
+            // 找到 model 并读取参数（KP, VTO, LAMBDA）
+            const model* pmodel = ckt.findModelConst(dev.model);
+            double MU;
+            double COX;
+            double VT;
+            double LAMBDA;
+            if (pmodel) {
+                if (pmodel->parameters.count("MU")) MU = pmodel->parameters.at("MU");
+                if (pmodel->parameters.count("VT")) VT = pmodel->parameters.at("VT");
+                if (pmodel->parameters.count("COX")) COX = pmodel->parameters.at("COX");
+                if (pmodel->parameters.count("LAMBDA")) LAMBDA = pmodel->parameters.at("LAMBDA");
+            }
+            double KP = MU * COX; // 过程跨导参数
+            // beta = KP * (W / L)
+            double beta = KP * (W / L);
+            //提取时域节点电压
+            Eigen::VectorXcd V1 = Eigen::VectorXcd::Zero(2 * hb_params.num_harmonics + 1);
+            Eigen::VectorXcd Vg0 = Eigen::VectorXcd::Zero(2 * hb_params.num_harmonics + 1);
+            Eigen::VectorXcd V2 = Eigen::VectorXcd::Zero(2 * hb_params.num_harmonics + 1);
+            // //debug: 输出节点信息
+            // std::cout << "Start trans" << "\n";
+            // 从 hb_xt 中提取各节点的时域序列时要注意：
+            // - 节点号为 0 表示接地，应直接赋 0
+            // - hb_xt 长度为 base_size * N (N = 2*num_harmonics+1)，索引必须在 [0, hb_xt.size()-1] 范围内
+            int N = 2 * hb_params.num_harmonics + 1;
+            for(int n = 0; n < N; ++n){
+                // 节点 n1
+                if (n1 != 0) {
+                    int idx1 = (n1 - 1) + n * base_size;
+                    if (idx1 >= 0 && idx1 < hb_xt.size()) {
+                        V1(n) = hb_xt(idx1);
+                    } else {
+                        V1(n) = std::complex<double>(0.0, 0.0);
+                    }
+                } else {
+                    V1(n) = std::complex<double>(0.0, 0.0);
+                }
+
+                // 栅极节点 ng0
+                if (ng0 != 0) {
+                    int idxg = (ng0 - 1) + n * base_size;
+                    if (idxg >= 0 && idxg < hb_xt.size()) {
+                        Vg0(n) = hb_xt(idxg);
+                    } else {
+                        Vg0(n) = std::complex<double>(0.0, 0.0);
+                    }
+                } else {
+                    Vg0(n) = std::complex<double>(0.0, 0.0);
+                }
+
+                // 节点 n2
+                if (n2 != 0) {
+                    int idx2 = (n2 - 1) + n * base_size;
+                    if (idx2 >= 0 && idx2 < hb_xt.size()) {
+                        V2(n) = hb_xt(idx2);
+                    } else {
+                        V2(n) = std::complex<double>(0.0, 0.0);
+                    }
+                } else {
+                    V2(n) = std::complex<double>(0.0, 0.0);
+                }
+            }
+            // //取实部
+            // std::cout << "Start real part extraction" << "\n";
+            Eigen::VectorXd V1_real = V1.real();
+            Eigen::VectorXd Vg0_real = Vg0.real();
+            Eigen::VectorXd V2_real = V2.real();
+            //根据电压高低确定 Drain 和 Source, 注意NMOS和PMOS的源漏定义
+            //初始化漏极电流 Ids
+            Eigen::VectorXd Ids_time = Eigen::VectorXd::Zero(2 * hb_params.num_harmonics + 1);
+            int nd, ns;
+            double Vd0, Vs0;
+            //遍历所有时域点
+            for(int t = 0; t < (2 * hb_params.num_harmonics + 1); ++t){
+                // //Debug: 输出时域点信息
+                // std::cout << "  Time Point " << t << "\n";
+                if (V1_real(t) > V2_real(t) && type > 0 || V1_real(t) <= V2_real(t) && type < 0) { 
+                    nd = n1;
+                    Vd0 = V1_real(t);
+                    ns = n2; 
+                    Vs0 = V2_real(t);
+                } else {
+                    nd = n2; 
+                    Vd0 = V2_real(t);
+                    ns = n1; 
+                    Vs0 = V1_real(t);
+                }
+
+                double Vgs = type * (Vg0_real(t) - Vs0);
+                double Vds = type * (Vd0 - Vs0);
+                double Vth = VT * type; 
+                //计算漏极电流 Ids
+                // 计算 Id0, gm, gds, Ieq
+                double Id0 = 0.0;
+                double gm = 0.0;
+                double gds = 0.0;
+                double Ieq = 0.0;
+
+                if (Vgs <= Vth) {
+                    // cutoff
+                    continue;
+                } 
+                else {
+                    // 依据 Vds 与 Vgs-Vth 判定工作区
+                    double Vov = Vgs - Vth; // overdrive
+                    if (Vds < Vov) {
+                        // 线性区 (triode)
+                        // Id = beta * ( (Vov)*Vds - 0.5*Vds^2 )
+                        Id0 = beta * (Vov * Vds - 0.5 * Vds * Vds);
+                        // 导数计算
+                        // gm = ∂Id/∂Vg = beta * Vds
+                        gm = beta * Vds;
+                        // gds = ∂Id/∂Vd = beta * (Vov - Vds)
+                        gds = beta * (Vov - Vds);
+                    } else {
+                        // 饱和区 (saturation)
+                        // Id = 0.5 * beta * Vov^2 * (1 + lambda*Vds)
+                        Id0 = 0.5 * beta * Vov * Vov * (1.0 + LAMBDA * Vds);
+                        // gm = ∂Id/∂Vg = beta * Vov * (1 + lambda*Vds)
+                        gm = beta * Vov * (1.0 + LAMBDA * Vds);
+                        // gds = ∂Id/∂Vd = 0.5 * lambda * beta * Vov^2
+                        gds = 0.5 * LAMBDA * beta * Vov;
+                    }
+                    //规定Id流出源极
+                    Id0 = type * Id0;
+                    // Ids_time(t) = Id0;
+                    //把电流加入到时域电流向量中
+                    // I_dev_time(t * base_size + nd - 1) -= Id0;
+                    // I_dev_time(t * base_size + ns - 1) += Id0;
+                    //gm和gds添加到时域雅可比矩阵中
+                    //对漏极节点加入贡献
+                    // //debug
+                    // std::cout << "add Jacobian contributions at time point " << t << "\n";
+                    if (nd != 0) {
+                        int row_index = t * base_size + nd - 1;
+                        //电流
+                        I_dev_time(row_index) -= Id0;
+                        // 对漏极节点的电压导数贡献
+                        t_jacobian(row_index, t * base_size + nd - 1) += gds;
+                        // 对栅极节点的电压导数贡献
+                        if (ng0 != 0) {
+                            t_jacobian(row_index, t * base_size + ng0 - 1) += gm;
+                        }
+                        // 对源极节点的电压导数贡献
+                        if (ns != 0) {
+                            t_jacobian(row_index, t * base_size + ns - 1) += - (gm + gds);
+                        }
+                    }
+                    //对源极节点加入贡献
+                    if (ns != 0) {
+                        int row_index = t * base_size + ns - 1;
+                        //电流
+                        I_dev_time(row_index) += Id0;
+                        // 对漏极节点的电压导数贡献
+                        if(nd != 0)
+                        t_jacobian(row_index, t * base_size + nd - 1) += -gds;
+                        // 对栅极节点的电压导数贡献
+                        if (ng0 != 0) {
+                            t_jacobian(row_index, t * base_size + ng0 - 1) += -gm;
+                        }
+                        // 对源极节点的电压导数贡献
+                        if (ns != 0) {
+                            t_jacobian(row_index, t * base_size + ns - 1) += (gm + gds);
+                        }
+                    }
+                }
+                //Debug:
+                // std::cout << "Time point " << t << ": Vd0=" << Vd0 << ", Vs0=" << Vs0 << ", Vgs=" << Vgs << ", Vds=" << Vds << ", Ids=" << Ids_time(t) << "\n";
+            }
+            //对Ids_time进行DFT变换，得到频域分量
+            // Ids_time 是单一变量在 N 个时间点上的序列（长度 N），
+            // 此处直接用 hb_DFT_matrix（N x N）乘以序列，避免将长度为 N 的向量传入
+            // 期望长度为 base_size * N 的 hb_DFT 函数导致的越界。
+            // Eigen::VectorXcd Ids_freq = hb_DFT_matrix * Ids_time.cast<std::complex<double> >();
+            // //将Ids_freq加入到hb_MNA_Y和hb_J中
+            // for(int k = 0; k < (2 * hb_params.num_harmonics + 1); ++k){
+            //     int row_index;
+            //     //对漏极节点加入Ids_freq
+            //     row_index = (k) * base_size + nd - 1;
+            //     hb_J(row_index) -= Ids_freq(k);
+            //     //对源极节点加入-Ids_freq
+            //     row_index = (k) * base_size + ns - 1;
+            //     hb_J(row_index) += Ids_freq(k);
+            // }
+           
+            
+        }
+        //  //Debug:
+        // std::cout << "MOS Device " << dev.name << " processed in HB.\n";
+
+    }
+
+    // //Debug:输出时域电流向量
+    // std::cout << "Nonlinear Device Time-Domain Current Vector (I_dev_time):\n" << I_dev_time << "\n";
+
+    //将时域电流向量进行DFT变换，得到频域分量
+    Eigen::VectorXcd I_dev_freq = hb_DFT(I_dev_time.cast<std::complex<double> >());
+
+    // //Debug:输出频域电流向量
+    // std::cout << "Nonlinear Device Frequency-Domain Current Vector (I_dev_freq):\n" << I_dev_freq << "\n";
+
+    //将I_dev_freq加入到hb_J中
+    for(int k = 0; k < (2 * hb_params.num_harmonics + 1); ++k){
+        int row_index;
+        //对各个节点加入电流源贡献
+        for(int i = 0; i < base_size; ++i){
+            row_index = (k) * base_size + i;
+            hb_J(row_index) += I_dev_freq(row_index);
+        }
+        // //Debug:
+        // std::cout << "Frequency point " << k - hb_params.num_harmonics << ": Current Contribution added to hb_J.\n";
+    }
+    //线性元件对于频域雅可比矩阵的贡献
+    hb_jacobian = hb_T2F_matrix * t_jacobian * hb_F2T_matrix;
+
+    // //Debug: 输出时域雅可比矩阵
+    // std::cout << "Time-Domain Jacobian Matrix (t_jacobian):\n" << t_jacobian << "\n";
+    // //Debug: 输出频域雅可比矩阵
+    // std::cout << "MOS Frequency-Domain Jacobian Matrix (hb_jacobian):\n" << hb_jacobian << "\n";
+
+    hb_jacobian += hb_liner_Y;
+}
+
+
+void solver::hb_solve_linear_MNA(){
+    //求解多频率点的线性MNA方程
+    Eigen::VectorXcd hb_x = hb_MNA_Y.fullPivLu().solve(hb_J);
+    // //Debug: 输出多频率点的解向量
+    // std::cout << "Harmonic Balance Linear MNA Solution (x):\n" << hb_x << "\n";
+    //进行IDFT变换，得到时域解
+    // Eigen::VectorXcd hb_xt = hb_iDFT(hb_x);
+    hb_xt = hb_F2T_matrix * hb_x;
+    // //Debug: 输出时域解向量
+    // std::cout << "Harmonic Balance Time-Domain Solution (xt):\n" << hb_xt << "\n";
+}
+
+//设置初始频域解
+void solver::HB_set_initial_xw(const std::map<std::string, double>& node_voltage_map){
+    //运行一篇直流分析，得到base_size
+    //先对直流点构建线性MNA矩阵
+    build_linear_MNA(false);
+    MNA_Y = Eigen::MatrixXd::Zero(liner_Y.rows(), liner_Y.cols());
+    MNA_Y = liner_Y;
+    build_sources_MNA();
+    //这样就得到的MNA_Y大小就是每个频率点的矩阵大小
+    base_size = MNA_Y.rows();
+
+    int N = 2 * hb_params.num_harmonics + 1;
+    hb_xw = Eigen::VectorXcd::Zero(base_size * N);
+    //遍历节点电压映射，设置初始频域解
+    for(const auto& pair : node_voltage_map){
+        const std::string& node_name = pair.first;
+        double voltage = pair.second;
+        //找到节点索引
+        int node_index = ckt.getNodeID(node_name);
+        if(node_index == -1){
+            std::cerr << "Warning: Node " << node_name << " not found in circuit. Skipping initial condition setting.\n";
+            continue;
+        }
+        //设置基频分量
+        hb_xw(node_index - 1 + (hb_params.num_harmonics - 1) * base_size) = std::complex<double>(voltage, 0.0);
+        hb_xw(node_index - 1 + (hb_params.num_harmonics + 1) * base_size) = std::complex<double>(voltage, 0.0);
+    }
+
+    //Debug: 输出初始频域解
+    std::cout << "Initial Harmonic Balance Frequency-Domain Solution (xw):\n" << hb_xw << "\n";
+}
+
+void solver::PSS_solve_harmonic_balance(){
+
+    //构建多频率点的线性MNA矩阵
+    hb_build_linear_MNA();
+    // //Debug: 输出多频率点的线性MNA矩阵
+    // std::cout << "Harmonic Balance Linear MNA Matrix (Y):\n" << hb_liner_Y << "\n";
+
+    //初始化DFT和IDFT矩阵
+    hb_initialize_DFT_matrices();
+    hb_build_TF_matrix();
+
+    //确定需要打印的节点
+    parse_print_variables();
+    // 初始化频域解向量
+    hb_xt = Eigen::VectorXcd::Zero(base_size * (2 * hb_params.num_harmonics + 1));
+    hb_xt = hb_iDFT(hb_xw);
+
+    //进行迭代求解
+    Eigen::VectorXcd hb_xw_old = Eigen::VectorXcd::Zero(base_size * (2 * hb_params.num_harmonics + 1));
+    for(int iter = 0; iter < hb_params.max_iterations; ++iter){
+        std::cout << "Harmonic Balance Iteration " << iter + 1 << ":\n";
+        // //Debug: 输出当前频域解
+        // std::cout << "Current Frequency-Domain Solution (xw):\n" << hb_xw << "\n";
+        // //Debug: 输出时域解
+        // std::cout << "Current Time-Domain Solution (xt):\n" << hb_xt << "\n";
+
+        //保存上一次的频域解
+        hb_xw_old = hb_xw;
+        //构建非线性器件的HB贡献
+        hb_build_nonlinear_MNA();
+        // std::cout << "Nonlinear MNA contribution built.\n";
+        //加入sources到多频率点MNA矩阵和J向量中
+        hb_build_sources_MNA();
+        // std::cout << "Sources contribution built.\n";
+        //直接求解法求解多频率点的线性MNA方程
+        // hb_solve_linear_MNA();
+        //已经得到新的频域解
+        //初值调节迭代
+
+
+
+        // //Debug: 输出当前MNA矩阵和J向量
+        // std::cout << "Harmonic Balance MNA Matrix (Y):\n" << hb_MNA_Y << "\n";
+        // std::cout << "Harmonic Balance Jacobian Matrix:\n" << hb_jacobian << "\n";
+        // std::cout << "Harmonic Balance J Vector:\n" << hb_J << "\n";
+
+        //迭代求解
+        Eigen::VectorXcd delta_F = hb_J - (hb_MNA_Y * hb_xw);
+
+    // Debug: 计时开始
+    // 开始时间点
+    // auto start = std::chrono::high_resolution_clock::now();
+    
+        Eigen::VectorXcd delta_xw = hb_jacobian.fullPivLu().solve(delta_F);
+
+    // // Debug 或者直接获取秒
+    // // 结束时间点
+    // auto end = std::chrono::high_resolution_clock::now();
+    // auto seconds = std::chrono::duration<double>(end - start).count();
+    // std::cout << "求解jacobian矩阵耗时: " << seconds << " 秒" << std::endl;
+
+    // //Debug:展示增量
+    // std::cout << "Delta_xw:\n" << delta_xw << "\n";
+
+
+        hb_xw += delta_xw;
+        
+        //检查收敛性
+        double norm = (hb_xw - hb_xw_old).norm();
+        //Debug: 输出收敛性指标
+        std::cout << "Convergence Norm: " << norm << "\n";
+        
+        if (norm < hb_params.tolerance) {
+            std::cout << "Converged after " << iter + 1 << " iterations.\n";
             break;
         }
-
-        // ---- Step4：更新初始条件 ----
-        // 松弛法：X0 ← X0 + α*(XT - X0)
-        double alpha = 0.5;   // 可调，0.3~0.8 之间效果较好
-        X0 = X0 + alpha * F;
+        hb_xt = hb_iDFT(hb_xw);
     }
+    //最终求解得到时域解
+    hb_xt = hb_iDFT(hb_xw);
 
-    std::cout << "Warning: Shooting method did NOT converge within max_iters.\n";
-    node_voltages = X0;
+    // //Debug: 输出DFT和IDFT矩阵
+    // std::cout << "DFT Matrix:\n" << hb_DFT_matrix << "\n";
+    // std::cout << "IDFT Matrix:\n" << hb_iDFT_matrix << "\n";
+    // // Debug：自己构建一个频域解向量，测试IDFT变换
+    // Eigen::VectorXcd test_xw = Eigen::VectorXcd::Zero(base_size * (2*hb_params.num_harmonics+1));
+    // int i = 0;
+    //     for(int k = 0; k < (2*hb_params.num_harmonics+1); ++k){
+    //         if(k == 0 || k == 2*hb_params.num_harmonics)
+    //             test_xw(i + k * base_size) = std::complex<double>(0.5, 0.0); //最高频点余弦波 
+    //         else
+    //         test_xw(i + k * base_size) = std::complex<double>(0.0, 0.0); //简单测试值
+    //     }
+    //     i = 1;
+    //     for(int k = 0; k < (2*hb_params.num_harmonics+1); ++k){
+    //         if(k == hb_params.num_harmonics)
+    //             test_xw(i + k * base_size) = std::complex<double>(1.0, 0.0); //直流分量
+    //         else
+    //         test_xw(i + k * base_size) = std::complex<double>(0.0, 0.0); //简单测试值
+    //     }
+    //     std::cout << "Test DFT Input:\n" << test_xw << "\n";
+    // Eigen::VectorXcd test_xt = hb_iDFT(test_xw);
+    // std::cout << "Test IDFT Result:\n" << test_xt << "\n";
+    // //测试DFT变换
+    // Eigen::VectorXcd test_xw_back = hb_DFT(test_xt);
+    // std::cout << "Test DFT Result:\n" << test_xw_back << "\n";
 
-    //展示节点电压结果
-    std::cout << "PSS Analysis Node Voltages:\n";
-    for (const auto& pair : ckt.node_map){
-        const std::string& node_name = pair.first;
-        int node_id = pair.second;
-        if (node_id == 0){
-            std::cout << "Node " << node_name << " (ID " << node_id << "): 0 V (Ground)\n";
-        }
-        else{
-            std::cout << "Node " << node_name << " (ID " << node_id << "): " << node_voltages[node_id - 1] << " V\n";
-        }
-    }
+
+    // //Debug: 输出多频率点的线性MNA矩阵和J向量
+    // //输出到文件中查看
+    // std::ofstream file_Y("hb_MNA_Y.txt");
+    // if (file_Y.is_open()) {
+    //     file_Y << hb_MNA_Y << std::endl;
+    //     file_Y << hb_J << std::endl;
+    //     file_Y.close();
+    // } else {
+    //     std::cerr << "无法打开文件 hb_MNA_Y.txt 进行写入。" << std::endl;
+    // }
+
+    //打印需要打印的节点
+        //根据需要打印的变量，存到文件中
+        {
+            // 输出文件: hb_print.txt
+                std::ofstream hdr("hb_print.txt", std::ios::out);
+                hdr << "Time(s)";
+                for (int node_id : ckt.print_node_ids) {
+                    std::string name = "NODE";
+                    if (node_id >= 0 && node_id < (int)ckt.node_list.size()) name = ckt.node_list[node_id];
+                    hdr << "\tV(" << name << ")";
+                }
+                // //只需要遍历所有sources，按顺序输出支路电流表头
+                // for (const auto &d : ckt.sources){
+                //     if (d.printI) hdr << "\tI(" << d.name << ")";
+                // }
+                //关闭
+                hdr << "\n";
+                hdr.close();
+            }
+
+            std::ofstream out("hb_print.txt", std::ios::app);
+            //遍历所有时域点，输出需要打印的节点电压和支路电流
+            int N = 2 * hb_params.num_harmonics + 1;
+            double T = 1.0 / (hb_params.fundamental_omega / (2.0 * M_PI)); //周期
+            double time = 0.0;
+            for(int n = 0; n < N; ++n){
+                time = n * T / N;
+                //提取节点电压
+                Eigen::VectorXd hb_node_voltages(ckt.node_list.size() -1);
+                for(int i = 0; i < (ckt.node_list.size() -1); ++i){
+                    hb_node_voltages(i) = hb_xt(i + n * base_size).real();
+                }
+                //提取支路电流
+                // Eigen::VectorXd branch_currents(ckt.sources.size());
+                // for(int i = 0; i < ckt.sources.size(); ++i){
+                //     int branch_index = ckt.sources[i].branch_current_index + (ckt.node_list.size() -1);
+                //     branch_currents(i) = hb_xt(branch_index + n * base_size).real();
+                // }
+                out << time;
+                for (int node_id : ckt.print_node_ids) {
+                    double v = 0.0;
+                    if (node_id == 0) v = 0.0;
+                    else if (node_id - 1 >= 0 && node_id - 1 < hb_node_voltages.size()) v = hb_node_voltages[node_id - 1];
+                    out << "\t" << v;
+                }
+                out << "\n";
+            // for (int current_dev_index : ckt.print_branch_current_indices) {
+            //     if(current_dev_index >=0 && current_dev_index < ckt.sources.size()){
+            //         out << "\t" << branch_currents[current_dev_index];
+            //     }
+            // }
+            }
+            out << "\n";
+            out.close();
 }
-
-
-//     ////////////////11.27用于验证线性直流求解结果正确/////////////////////
-//     //不同方法求解MNA方程
-//     //solve_linear_MNA_Gauss();
-//     solve_linear_MNA_LU();
-//     // get_linear_MNA_LU_manual();
-//     // solve_with_LU_matrices();
-//     //展示节点电压结果
-//     std::cout << "DC Analysis Node Voltages:\n";
-//     for (const auto& pair : ckt.node_map){
-//         const std::string& node_name = pair.first;
-//         int node_id = pair.second;
-//         if (node_id == 0){
-//             std::cout << "Node " << node_name << " (ID " << node_id << "): 0 V (Ground)\n";
-//         }
-//         else{
-//             std::cout << "Node " << node_name << " (ID " << node_id << "): " << node_voltages[node_id - 1] << " V\n";
-//         }
-//     }
-// }
