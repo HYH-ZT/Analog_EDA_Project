@@ -1322,7 +1322,7 @@ void solver::TRAN_solve(double tstop, double tstep){
     //先进行直流分析，获得初始条件
     //DC_solve();
     //零初值条件
-    node_voltages = Eigen::VectorXd::Zero(ckt.node_map.size() - 1);
+    //node_voltages = Eigen::VectorXd::Zero(ckt.node_map.size() - 1);
 
     // //Debug展示初始节点电压结果
     // std::cout << "Initial Node Voltages for Transient Analysis:\n";
@@ -1377,18 +1377,19 @@ void solver::TRAN_solve(double tstop, double tstep){
         //求解非线性MNA方程，以上次节点电压为初值
         DC_solve(node_voltages, true);
 
-        // //Debug:展示节点电压结果
-        // std::cout << "Node Voltages at time " << time << " s:\n";
-        // for (const auto& pair : ckt.node_map){
-        //     const std::string& node_name = pair.first;
-        //     int node_id = pair.second;
-        //     if (node_id == 0){
-        //         std::cout << "Node " << node_name << " (ID " << node_id << "): 0 V (Ground)\n";
-        //     }
-        //     else{
-        //         std::cout << "Node " << node_name << " (ID " << node_id << "): " << node_voltages[node_id - 1] << " V\n";
-        //     }
-        // }
+        //Debug:展示节点电压结果
+        std::cout << "Node Voltages at time " << time << " s:\n";
+        for (const auto& pair : ckt.node_map){
+            const std::string& node_name = pair.first;
+            int node_id = pair.second;
+            if (node_id == 0){
+                std::cout << "Node " << node_name << " (ID " << node_id << "): 0 V (Ground)\n";
+            }
+            else{
+                std::cout << "Node " << node_name << " (ID " << node_id << "): " << node_voltages[node_id - 1] << " V\n";
+            }
+        }
+        std::cout << "\n\n";
 
 
         //根据需要打印的变量，存到文件中

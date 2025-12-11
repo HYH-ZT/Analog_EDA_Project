@@ -19,5 +19,8 @@ int main(){
     double frequency = 10e6;
     double period_T = 1.0 / frequency;
     sol.PSS_solve_shooting(period_T, period_T / 100, 100, 1e-6);
+    //用稳态分析得到的节点电压值跑一次瞬态
+    cout << "Running transient simulation for one period to verify PSS result...\n";
+    sol.TRAN_solve(period_T, period_T / 100);
     return 0;
 }
