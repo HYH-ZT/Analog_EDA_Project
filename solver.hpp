@@ -132,8 +132,13 @@ class solver {
                LinearSolverMethod lsm = LinearSolverMethod::LU_DECOMPOSITION,
                TransientMethod tm = TransientMethod::TRAPEZOIDAL,
                SteadyStateMethod ssm = SteadyStateMethod::SHOOTING);
-        // 输出各节点电压
+        // 获取ckt中要观察的节点列表
+        const std::vector<int>& get_plot_node_ids() const { return ckt.plot_node_ids; }
+        // 输出所有节点电压
         void print_node_voltages();
+        // 输出指定节点电压
+        void print_node_voltage(const std::string& node_name);
+        void print_node_voltage(int node_id);
         // 设置求解方法
         void setLinearSolverMethod(LinearSolverMethod method) { linear_solver_method = method; }
         void setTransientMethod(TransientMethod method) { transient_method = method; }

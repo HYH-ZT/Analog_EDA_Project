@@ -37,6 +37,9 @@ struct circuit
     std::vector<device> nonlinear_devices;
     std::vector<device> sources;
     std::vector<model> models;
+    //添加PLOTNV指令需要展示的节点
+    std::vector<std::string> plot_node_names;
+    std::vector<int> plot_node_ids;
     //添加需要打印的node电压和sources的电流
     std::vector<int> print_node_ids;
     std::vector<int> print_branch_current_indices;

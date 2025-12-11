@@ -156,7 +156,7 @@ static void parseDeviceLine(const std::string& line, circuit& ckt) {
 }
 
 // 解析分析语句
-static void parseAnalysisLine(const std::string& line, std::vector<analysis>& analysis_list) {
+static void parseAnalysisLine(const std::string& line, std::vector<analysis>& analysis_list, circuit& ckt) {
     analysis a;
     a.type = "";
     std::istringstream iss(line);
@@ -211,6 +211,15 @@ static void parseAnalysisLine(const std::string& line, std::vector<analysis>& an
             std::cerr << "⚠️  警告: .print命令未找到对应的 " << analysis_type << " 分析" << std::endl;
         }
     }
+    else if (cmd == ".plotnv" || cmd == ".PLOTNV") {
+        // .PLOTNV命令: .PLOTNV V(1) V(2) V(3)
+        std::string nodeName;
+        while (iss >> nodeName) {
+            ckt.plot_node_names.push_back(nodeName);
+            int nodeID = ckt.getNodeID(nodeName);
+            ckt.plot_node_ids.push_back(nodeID);
+        }
+    }
 }
 
 
@@ -242,7 +251,7 @@ void parseNetlistFile(const std::string& filename,
         }
 
         if (isAnalysis(line)) {
-            parseAnalysisLine(line, analyses);
+            parseAnalysisLine(line, analyses, ckt);
             continue;
         }
 

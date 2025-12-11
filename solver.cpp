@@ -9,7 +9,8 @@
 
 
 solver::solver(circuit& ckt_, analysis& analysis_, 
-               LinearSolverMethod lsm, TransientMethod tm,
+               LinearSolverMethod lsm, 
+               TransientMethod tm,
                SteadyStateMethod ssm)
     : ckt(ckt_), analysis_type(analysis_),
       linear_solver_method(lsm), transient_method(tm), steady_state_method(ssm) {
@@ -34,6 +35,26 @@ void solver::print_node_voltages() {
         } else {
             std::cout << "Node " << node_name << " (ID " << node_id << "): " << node_voltages[node_id - 1] << " V\n";
         }
+    }
+}
+
+void solver::print_node_voltage(const int node_id) {
+    std::string node_name = ckt.node_list[node_id];
+    if (node_id == 0) {
+        std::cout << "Node " << node_name << " (ID " << node_id << "): 0 V (Ground)\n";
+    } else if (node_id > 0 && node_id < ckt.node_map.size()) {
+        std::cout << "Node " << node_name << " (ID " << node_id << "): " << node_voltages[node_id - 1] << " V\n";
+    } else {
+        std::cout << "Error: Node ID " << node_id << " is out of range.\n";
+    }
+}
+
+void solver::print_node_voltage(const std::string& node_name) {
+    int node_id = ckt.getNodeID(node_name);
+    if (node_id == -1) {
+        std::cout << "Error: Node " << node_name << " not found in the circuit.\n";
+    } else {
+        print_node_voltage(node_id);
     }
 }
 
@@ -734,7 +755,7 @@ void solver::build_sources_MNA(){
             int n1 = dev.nodes[0];
             int n2 = dev.nodes[1];
             double value = dev.parameters["DC"];
- 
+
             //先引入支路电流变量，从n1流向n2
             int new_var_index = MNA_Y.rows();
             MNA_Y.conservativeResize(new_var_index + 1, new_var_index + 1);
@@ -961,10 +982,10 @@ void solver::DC_solve() {
         // 4. 电源 stamp
         build_sources_MNA();
 
-        // Debug: 输出当前迭代的 MNA 矩阵和 J 向量
-        std::cout << "Iteration " << iter + 1 << ":\n";
-        std::cout << "MNA_Y:\n" << MNA_Y << "\n";
-        std::cout << "J:\n" << J << "\n";
+        // // Debug: 输出当前迭代的 MNA 矩阵和 J 向量
+        // std::cout << "Iteration " << iter + 1 << ":\n";
+        // std::cout << "MNA_Y:\n" << MNA_Y << "\n";
+        // std::cout << "J:\n" << J << "\n";
 
         // 5. 求解线性方程
         //保存旧节点电压用于收敛性检查
@@ -998,18 +1019,10 @@ void solver::DC_solve() {
         //     }
         // }
 
-    //展示节点电压结果
-    std::cout << "DC Analysis Node Voltages:\n";
-    for (const auto& pair : ckt.node_map){
-        const std::string& node_name = pair.first;
-        int node_id = pair.second;
-        if (node_id == 0){
-            std::cout << "Node " << node_name << " (ID " << node_id << "): 0 V (Ground)\n";
-        }
-        else{
-            std::cout << "Node " << node_name << " (ID " << node_id << "): " << node_voltages[node_id - 1] << " V\n";
-        }
-    }
+    // //Debug:展示所有节点电压结果
+    // std::cout << "\n";
+    // std::cout << "DC Analysis Node Voltages:\n";
+    // print_node_voltages();
 }
 
 // 使用节点名和电压值的映射来设置初值

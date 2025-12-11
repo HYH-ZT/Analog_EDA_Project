@@ -8,7 +8,7 @@
 
 using namespace std;
 
-int main(){
+int main_pss_shooting_method_test(){
     circuit ckt;
     vector<string> netlist;
     vector<analysis> analyses;
