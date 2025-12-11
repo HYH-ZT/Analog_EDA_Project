@@ -25,6 +25,18 @@ enum class SteadyStateMethod {
     //CONTINUATION = 2        // 延拓法 这是啥
 };
 
+//HB相关参数
+class HB_params {
+    public:
+        double fundamental_omega; // 基频角频率
+        int num_harmonics; // 谐波数量
+        int max_iterations; // 最大迭代次数
+        double tolerance; // 收敛容限
+        double relaxation_factor; // 松弛因子
+        //初始频域解
+        Eigen::VectorXcd initial_xw;
+};
+
 class solver {
     private:
         circuit ckt;
@@ -36,10 +48,12 @@ class solver {
         SteadyStateMethod steady_state_method;
         
         Eigen::VectorXd J; //电流源向量
+
         //经过主元置换后的J向量
         Eigen::VectorXd J_permuted;
         //线性MNA矩阵
         Eigen::MatrixXd liner_Y;
+
         //LU分解矩阵
         Eigen::MatrixXd L;
         Eigen::MatrixXd U;
@@ -51,12 +65,28 @@ class solver {
         Eigen::VectorXd branch_currents;
         //动态器件名称到支路电流索引的映射
         std::map<std::string, int> dynamic_device_current_map;
+
+        //HB相关变量
+        Eigen::VectorXcd hb_J; //HB电流源向量
+        Eigen::MatrixXcd hb_liner_Y;
+        Eigen::MatrixXcd hb_MNA_Y; //频率点MNA矩阵
+        Eigen::MatrixXcd hb_jacobian; //HB雅可比矩阵
+        Eigen::MatrixXd t_jacobian;  //时域雅可比矩阵
+        //DFT变换矩阵
+        Eigen::MatrixXcd hb_DFT_matrix;
+        Eigen::MatrixXcd hb_iDFT_matrix;
+        Eigen::MatrixXcd hb_F2T_matrix; //把频域解变换为时域解的矩阵
+        Eigen::MatrixXcd hb_T2F_matrix; //把时域解变换为频域解的矩阵
+        Eigen::VectorXcd hb_xw; //HB频域解
+        Eigen::VectorXcd hb_xt; //HB时域解
+
         //构建线性MNA矩阵和J向量
         void build_linear_MNA(bool in_tran = false);
         //非线性器件的处理
         void build_nonlinear_MNA();
         //电源的处理
         void build_sources_MNA();
+        void build_sources_MNA(bool in_tran,double time);
 
         //高斯消去法线性MNA方程求解
         void solve_linear_MNA_Gauss();
@@ -83,6 +113,19 @@ class solver {
         //构建瞬态分析电路
         void build_transient_ckt(double tstep);
 
+        //HB相关函数
+        int base_size;  //在build_linear_MNA中初始化，表示单频点矩阵大小
+        void build_linear_MNA_frequency(Eigen::MatrixXcd& liner_Y_freq, double omega);
+        void hb_build_linear_MNA();
+        void hb_initialize_DFT_matrices();
+        Eigen::VectorXcd hb_DFT(Eigen::VectorXcd xt);
+        Eigen::VectorXcd hb_iDFT(Eigen::VectorXcd xw);
+        void hb_solve_linear_MNA();
+        void hb_build_nonlinear_MNA();
+        void hb_build_sources_MNA();
+        void hb_compute_jacobian();
+        void hb_build_TF_matrix();
+
 
     public:
         solver(circuit& ckt_, analysis& analysis_, 
@@ -102,15 +145,39 @@ class solver {
         
         //直流分析
         void DC_solve();    //默认初值为0
-        void DC_solve(const Eigen::VectorXd& initial_voltages,bool in_tran = false);    //根据输入的节点电压向量设置初值，给瞬态用的
+        void DC_solve(const Eigen::VectorXd& initial_voltages,bool in_tran = false,double time = 0.0);    //根据输入的节点电压向量设置初值，给瞬态用的
         void DC_solve(const std::map<std::string, double>& node_voltage_map,bool in_tran = false);  //根据节点名和电压值的映射设置初值，给人用的
         //瞬态分析
         void TRAN_solve();
         //
         void TRAN_solve(double tstop, double tstep);    //测试用
         //稳态分析
+        //HB相关变量
+        HB_params hb_params;
+        //设置HB初始频域解
+        void HB_set_initial_xw(const std::map<std::string, double>& node_voltage_map);
         void PSS_solve();
-        Eigen::VectorXd run_transient_once(double T, double tstep, const Eigen::VectorXd &init_x);
-        void PSS_solve_shooting(double period_T, double tstep, int max_iters, double tol);
+        void PSS_solve_shooting();
         void PSS_solve_harmonic_balance();
+
+
+
+        //神秘实验内容：主元最优置换
+    bool bfs_match(const std::vector<std::vector<int>>& graph, 
+                   std::vector<int>& pairU, 
+                   std::vector<int>& pairV, 
+                   std::vector<int>& dist, 
+                   int N);
+
+    bool dfs_match(int u, const std::vector<std::vector<int>>& graph,
+                   std::vector<int>& pairU, std::vector<int>& pairV,
+                   std::vector<int>& dist);
+
+    std::vector<int> hungarianMatch(const Eigen::MatrixXd& matrix);
+    Eigen::MatrixXd diagMax();
+    static Eigen::VectorXd restoreOrder(const Eigen::VectorXd& solution, 
+                                        const Eigen::MatrixXd& inversePerm);
+    int checkDiagonalDominance(double threshold = 1e-6) const ;
+
 };
+

@@ -2,8 +2,8 @@
 
 * 电源定义
 VDD 101 0 DC 5
-VINN 102 0 DC 2
-VINP 104 0 DC 3
+VINN 102 0 SIN 0 3 0.159155 0
+VINP 104 0 SIN 5 3 0.159155 0
 VTN 106 0 DC 0
 VTP 107 0 DC 0 
 
@@ -20,6 +20,6 @@ R2 105 107 1e5
 .MODEL 2 VT 0.83 MU 1.5e-1 COX 0.3e-4 LAMBDA 0.00 CJ0 4.0e-14
 
 * 分析类型（根据需要选择）
-.dc
-.print dc V(103) V(105) I(VTN) I(VTP)
+.hb 1 5
+.print hb V(103) V(105) 
 

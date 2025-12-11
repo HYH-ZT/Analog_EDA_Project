@@ -13,9 +13,11 @@ struct device{
     std::map<std::string, double> parameters;
     std::string model; //对于有模型的器件，比如MOS管
     std::string rawline; //原始输入行
-    int branch_current_index = -1; //对于电压源等需要引入支路电流变量的器件，记录其支路电流变量在MNA矩阵中的索引
+    int branch_current_index = -1; //对于电压源以及电感等需要引入支路电流变量的器件，记录其支路电流变量在MNA矩阵中的索引
     std::string original_device_name = ""; //如果是动态等效器件，记录原始器件名称，否则为空
     bool printI = false; //是否在分析中打印该器件电流
+    //电感等效来的电压源，指向原始电感器件指针
+    device* original_device_ptr = nullptr;
 };
 struct model{
     std::string name;

@@ -350,9 +350,14 @@ void solver::solve_linear_MNA_Gauss_Jacobi(){
             }
         }
     }
-    // //Debug: 输出调整后的MNA矩阵和J向量
-    // std::cout << "Adjusted MNA_Y Matrix:\n" << MNA_Y << "\n";
-    // std::cout << "Adjusted J Vector:\n" << J << "\n";
+
+    //使用对角占优化处理，增强收敛性
+    Eigen::MatrixXd inversePerm = diagMax();
+
+
+    //Debug: 输出调整后的MNA矩阵和J向量
+    std::cout << "Adjusted MNA_Y Matrix:\n" << MNA_Y << "\n";
+    std::cout << "Adjusted J Vector:\n" << J << "\n";
 
     // std::cout << "Solving MNA equations using Gauss-Jacobi Iteration:\n";
     // //展示特征值
@@ -368,7 +373,7 @@ void solver::solve_linear_MNA_Gauss_Jacobi(){
 
     Eigen::VectorXd x_old = Eigen::VectorXd::Zero(n);
     Eigen::VectorXd x_new = Eigen::VectorXd::Zero(n);
-    const int max_iterations = 1000;
+    const int max_iterations = 100;
     const double tolerance = 1e-10;
     
     for (int iter = 0; iter < max_iterations; ++iter) {
@@ -390,8 +395,8 @@ void solver::solve_linear_MNA_Gauss_Jacobi(){
             }
         }
         
-        // //Debug: 输出每次迭代的结果
-        // std::cout << "Iteration " << iter + 1 << ": x = " << x_new << "\n";
+        //Debug: 输出每次迭代的结果
+        std::cout << "Iteration " << iter + 1 << ": x = " << x_new << "\n";
 
         //检查收敛性
         double error = (x_new - x_old).norm();
@@ -406,6 +411,8 @@ void solver::solve_linear_MNA_Gauss_Jacobi(){
             std::cout << "Warning: Did not converge within the maximum number of iterations\n";
         }
     }
+    //交换回来
+    x_new = inversePerm * x_new;
     
     //存储节点电压结果
     node_voltages.resize(ckt.node_map.size() - 1);
@@ -645,7 +652,11 @@ void solver::build_nonlinear_MNA() {
 
         if (Vgs <= Vth) {
             // cutoff
-            continue;
+            // 给一个很小的导纳以保证数值稳定性
+            gm = 0.0;
+            gds = 1e-12;
+            Id0 = 0.0;
+            Ieq = 0.0;
         } else {
             // 依据 Vds 与 Vgs-Vth 判定工作区
             double Vov = Vgs - Vth; // overdrive
@@ -937,18 +948,18 @@ void solver::DC_solve() {
         // 4. 电源 stamp
         build_sources_MNA();
 
-        // // Debug: 输出当前迭代的 MNA 矩阵和 J 向量
-        // std::cout << "Iteration " << iter + 1 << ":\n";
-        // std::cout << "MNA_Y:\n" << MNA_Y << "\n";
-        // std::cout << "J:\n" << J << "\n";
+        // Debug: 输出当前迭代的 MNA 矩阵和 J 向量
+        std::cout << "Iteration " << iter + 1 << ":\n";
+        std::cout << "MNA_Y:\n" << MNA_Y << "\n";
+        std::cout << "J:\n" << J << "\n";
 
         // 5. 求解线性方程
         //保存旧节点电压用于收敛性检查
         Eigen::VectorXd old_node_voltages = node_voltages;
         solve_linear_MNA();
 
-        // // Debug: 输出当前迭代的节点电压
-        // std::cout << "Node Voltages:\n" << node_voltages << std::endl << std::endl; 
+        // Debug: 输出当前迭代的节点电压
+        std::cout << "Node Voltages:\n" << node_voltages << std::endl << std::endl; 
 
         // 6. 检查收敛性
         double max_diff = (node_voltages - old_node_voltages).cwiseAbs().maxCoeff();
@@ -974,18 +985,18 @@ void solver::DC_solve() {
         //     }
         // }
 
-    // //展示节点电压结果
-    // std::cout << "DC Analysis Node Voltages:\n";
-    // for (const auto& pair : ckt.node_map){
-    //     const std::string& node_name = pair.first;
-    //     int node_id = pair.second;
-    //     if (node_id == 0){
-    //         std::cout << "Node " << node_name << " (ID " << node_id << "): 0 V (Ground)\n";
-    //     }
-    //     else{
-    //         std::cout << "Node " << node_name << " (ID " << node_id << "): " << node_voltages[node_id - 1] << " V\n";
-    //     }
-    // }
+    //展示节点电压结果
+    std::cout << "DC Analysis Node Voltages:\n";
+    for (const auto& pair : ckt.node_map){
+        const std::string& node_name = pair.first;
+        int node_id = pair.second;
+        if (node_id == 0){
+            std::cout << "Node " << node_name << " (ID " << node_id << "): 0 V (Ground)\n";
+        }
+        else{
+            std::cout << "Node " << node_name << " (ID " << node_id << "): " << node_voltages[node_id - 1] << " V\n";
+        }
+    }
 }
 
 // 使用节点名和电压值的映射来设置初值
@@ -1512,7 +1523,7 @@ void solver::TRAN_solve(double tstop, double tstep){
     //先进行直流分析，获得初始条件
     //DC_solve();
     //零初值条件
-    //node_voltages = Eigen::VectorXd::Zero(ckt.node_map.size() - 1);
+    node_voltages = Eigen::VectorXd::Zero(ckt.node_map.size() - 1);
 
     // //Debug展示初始节点电压结果
     // std::cout << "Initial Node Voltages for Transient Analysis:\n";
@@ -1567,19 +1578,18 @@ void solver::TRAN_solve(double tstop, double tstep){
         //求解非线性MNA方程，以上次节点电压为初值
         DC_solve(node_voltages, true);
 
-        //Debug:展示节点电压结果
-        std::cout << "Node Voltages at time " << time << " s:\n";
-        for (const auto& pair : ckt.node_map){
-            const std::string& node_name = pair.first;
-            int node_id = pair.second;
-            if (node_id == 0){
-                std::cout << "Node " << node_name << " (ID " << node_id << "): 0 V (Ground)\n";
-            }
-            else{
-                std::cout << "Node " << node_name << " (ID " << node_id << "): " << node_voltages[node_id - 1] << " V\n";
-            }
-        }
-        std::cout << "\n\n";
+        // //Debug:展示节点电压结果
+        // std::cout << "Node Voltages at time " << time << " s:\n";
+        // for (const auto& pair : ckt.node_map){
+        //     const std::string& node_name = pair.first;
+        //     int node_id = pair.second;
+        //     if (node_id == 0){
+        //         std::cout << "Node " << node_name << " (ID " << node_id << "): 0 V (Ground)\n";
+        //     }
+        //     else{
+        //         std::cout << "Node " << node_name << " (ID " << node_id << "): " << node_voltages[node_id - 1] << " V\n";
+        //     }
+        // }
 
 
         //根据需要打印的变量，存到文件中
@@ -2242,8 +2252,8 @@ void solver::HB_set_initial_xw(const std::map<std::string, double>& node_voltage
         hb_xw(node_index - 1 + (hb_params.num_harmonics + 1) * base_size) = std::complex<double>(voltage, 0.0);
     }
 
-    //Debug: 输出初始频域解
-    std::cout << "Initial Harmonic Balance Frequency-Domain Solution (xw):\n" << hb_xw << "\n";
+    // //Debug: 输出初始频域解
+    // std::cout << "Initial Harmonic Balance Frequency-Domain Solution (xw):\n" << hb_xw << "\n";
 }
 
 void solver::PSS_solve_harmonic_balance(){
@@ -2266,6 +2276,10 @@ void solver::PSS_solve_harmonic_balance(){
     //进行迭代求解
     Eigen::VectorXcd hb_xw_old = Eigen::VectorXcd::Zero(base_size * (2 * hb_params.num_harmonics + 1));
     for(int iter = 0; iter < hb_params.max_iterations; ++iter){
+        
+        //每次迭代用时
+        auto start_iter = std::chrono::high_resolution_clock::now();
+
         std::cout << "Harmonic Balance Iteration " << iter + 1 << ":\n";
         // //Debug: 输出当前频域解
         // std::cout << "Current Frequency-Domain Solution (xw):\n" << hb_xw << "\n";
@@ -2275,10 +2289,29 @@ void solver::PSS_solve_harmonic_balance(){
         //保存上一次的频域解
         hb_xw_old = hb_xw;
         //构建非线性器件的HB贡献
+
+        //对构建的时间进行计时
+        auto start_nonlinear = std::chrono::high_resolution_clock::now();
+        
         hb_build_nonlinear_MNA();
+
+        // 结束时间点
+        auto end_nonlinear = std::chrono::high_resolution_clock::now();
+        auto nonlinear_seconds = std::chrono::duration<double>(end_nonlinear - start_nonlinear).count();
+        std::cout << "构建非线性器件贡献耗时: " << nonlinear_seconds << " 秒" << std::endl;
+
         // std::cout << "Nonlinear MNA contribution built.\n";
         //加入sources到多频率点MNA矩阵和J向量中
+
+        //对构建的时间进行计时
+        auto start_sources = std::chrono::high_resolution_clock::now();
+
         hb_build_sources_MNA();
+
+        // 结束时间点
+        auto end_sources = std::chrono::high_resolution_clock::now();
+        auto sources_seconds = std::chrono::duration<double>(end_sources - start_sources).count();
+        std::cout << "构建sources贡献耗时: " << sources_seconds << " 秒" << std::endl;
         // std::cout << "Sources contribution built.\n";
         //直接求解法求解多频率点的线性MNA方程
         // hb_solve_linear_MNA();
@@ -2295,17 +2328,22 @@ void solver::PSS_solve_harmonic_balance(){
         //迭代求解
         Eigen::VectorXcd delta_F = hb_J - (hb_MNA_Y * hb_xw);
 
-    // Debug: 计时开始
-    // 开始时间点
-    // auto start = std::chrono::high_resolution_clock::now();
+    //Debug: 计时开始
+    //开始时间点
+    auto start_solveMNA = std::chrono::high_resolution_clock::now();
     
-        Eigen::VectorXcd delta_xw = hb_jacobian.fullPivLu().solve(delta_F);
+    // Eigen::VectorXcd delta_xw = hb_jacobian.fullPivLu().solve(delta_F);
+    //使用Eigen的LU分解求解器
+    Eigen::PartialPivLU<Eigen::MatrixXcd> lu(hb_jacobian);
+    
+    //求解线性方程组 MNA_Y * x = J
+    Eigen::VectorXcd delta_xw = lu.solve(delta_F);
 
-    // // Debug 或者直接获取秒
-    // // 结束时间点
-    // auto end = std::chrono::high_resolution_clock::now();
-    // auto seconds = std::chrono::duration<double>(end - start).count();
-    // std::cout << "求解jacobian矩阵耗时: " << seconds << " 秒" << std::endl;
+    // Debug 或者直接获取秒
+    // 结束时间点
+    auto end_solveMNA = std::chrono::high_resolution_clock::now();
+    auto seconds = std::chrono::duration<double>(end_solveMNA - start_solveMNA).count();
+    std::cout << "求解jacobian矩阵耗时: " << seconds << " 秒" << std::endl;
 
     // //Debug:展示增量
     // std::cout << "Delta_xw:\n" << delta_xw << "\n";
@@ -2317,12 +2355,18 @@ void solver::PSS_solve_harmonic_balance(){
         double norm = (hb_xw - hb_xw_old).norm();
         //Debug: 输出收敛性指标
         std::cout << "Convergence Norm: " << norm << "\n";
-        
+
         if (norm < hb_params.tolerance) {
             std::cout << "Converged after " << iter + 1 << " iterations.\n";
             break;
         }
         hb_xt = hb_iDFT(hb_xw);
+
+        //每次迭代用时
+        auto end_iter = std::chrono::high_resolution_clock::now();
+        auto iter_seconds = std::chrono::duration<double>(end_iter - start_iter).count();
+        std::cout << "Iteration " << iter + 1 << " completed in " << iter_seconds << " seconds.\n";
+
     }
     //最终求解得到时域解
     hb_xt = hb_iDFT(hb_xw);
@@ -2383,7 +2427,7 @@ void solver::PSS_solve_harmonic_balance(){
                 //关闭
                 hdr << "\n";
                 hdr.close();
-            }
+            
 
             std::ofstream out("hb_print.txt", std::ios::app);
             //遍历所有时域点，输出需要打印的节点电压和支路电流
@@ -2417,87 +2461,287 @@ void solver::PSS_solve_harmonic_balance(){
             //     }
             // }
             }
+
+            //打印频域结果
+            out << "\nFrequency Domain Results:\n";
+            out << "Harmonic\tFrequency(Hz)";
+            for (int node_id : ckt.print_node_ids) {
+                std::string name = "NODE";
+                if (node_id >= 0 && node_id < (int)ckt.node_list.size()) name = ckt.node_list[node_id];
+                out << "\tV(" << name << ")";
+            }
+            out << "\n";
+            for (int h = 0; h < N; ++h) {
+                Eigen::VectorXcd hb_node_vw(ckt.node_list.size() -1);
+                for(int i = 0; i < (ckt.node_list.size() -1); ++i){
+                    hb_node_vw(i) = hb_xw(i + h * base_size);
+                }
+                out << h - hb_params.num_harmonics << "\t" << ((h - hb_params.num_harmonics) * (hb_params.fundamental_omega / (2.0 * M_PI)));
+                for (int node_id : ckt.print_node_ids) {
+                    std::complex<double> v = 0.0;
+                    if (node_id == 0) v = 0.0;
+                    else if (node_id - 1 >= 0 && node_id - 1 < hb_xw.size()) v = hb_node_vw[node_id - 1];
+                    out << "\t" << v;
+                }
+                out << "\n";
+            }
+
             out << "\n";
             out.close();
+        }
 }
 
-// 运行一次瞬态，用给定初始条件 init_x，返回 T 处的节点电压
-Eigen::VectorXd solver::run_transient_once(double T, double tstep, const Eigen::VectorXd &init_x)
-{
-    // 设置初始节点电压
-    node_voltages = init_x;
 
-    // 计算步数
-    int steps = static_cast<int>(T / tstep);
 
-    for (int step = 0; step <= steps; step++) {
-        double time = step * tstep;
 
-        // 构建瞬态分析电路
-        build_transient_ckt(tstep);
-
-        // 以当前 node_voltages 为初值求解非线性 MNA
-        DC_solve(node_voltages, true);
-
-        // node_voltages 会在 DC_solve 中被更新，无需额外处理
-        std::cout << node_voltages.size() << std::endl;
+//神秘实验内容：对角线最优化
+    // 找到最大匹配的BFS函数（用于匈牙利算法）
+    bool solver::bfs_match(const std::vector<std::vector<int>>& graph, 
+                   std::vector<int>& pairU, 
+                   std::vector<int>& pairV, 
+                   std::vector<int>& dist, 
+                   int N) {
+        std::vector<int> q;
+        for (int u = 0; u < N; u++) {
+            if (pairU[u] == -1) {
+                dist[u] = 0;
+                q.push_back(u);
+            } else {
+                dist[u] = -1;
+            }
+        }
+        
+        bool found = false;
+        int qpos = 0;
+        
+        while (qpos < q.size()) {
+            int u = q[qpos++];
+            for (int v : graph[u]) {
+                if (pairV[v] == -1) {
+                    found = true;
+                } else if (dist[pairV[v]] == -1) {
+                    dist[pairV[v]] = dist[u] + 1;
+                    q.push_back(pairV[v]);
+                }
+            }
+        }
+        
+        return found;
     }
 
-    return node_voltages;   // 即 v(T)
-}
-
-void solver::PSS_solve_shooting(double period_T, double tstep, int max_iters, double tol){
-    // 节点个数
-    int N = ckt.node_map.size() - 1;
-
-    // ---- Step 0：初始化初始条件 X0 ----
-    // 你可以用 DC 解，或者直接用 0
-    Eigen::VectorXd X0 = Eigen::VectorXd::Zero(N);
-
-    std::cout << "Shooting Method Start: N = " << N << "\n";
-
-    for (int iter = 0; iter < max_iters; iter++)
-    {
-        std::cout << "=== Shooting Iteration " << iter << " ===\n";
-
-        // ---- Step1：从 X0 出发运行瞬态，得到周期末 v(T) ----
-        Eigen::VectorXd XT = run_transient_once(period_T, tstep, X0);
-
-        // ---- Step2：误差 F = XT - X0 ----
-        if (XT.size() != X0.size()) {
-            X0 = Eigen::VectorXd::Zero(XT.size());
+    // DFS寻找增广路
+    bool solver::dfs_match(int u, const std::vector<std::vector<int>>& graph,
+                   std::vector<int>& pairU, std::vector<int>& pairV,
+                   std::vector<int>& dist) {
+        for (int v : graph[u]) {
+            if (pairV[v] == -1 || (dist[pairV[v]] == dist[u] + 1 && 
+                dfs_match(pairV[v], graph, pairU, pairV, dist))) {
+                pairU[u] = v;
+                pairV[v] = u;
+                return true;
+            }
         }
-        Eigen::VectorXd F = XT - X0;
-        double err = F.norm();
-
-        std::cout << "Error norm = " << err << "\n";
-
-        // ---- Step3：检查收敛 ----
-        if (err < tol) {
-            std::cout << "Shooting method converged.\n";
-            node_voltages = XT;    // 最终稳态
-            break;
-        }
-
-        // ---- Step4：更新初始条件 ----
-        // 松弛法：X0 ← X0 + α*(XT - X0)
-        double alpha = 0.5;   // 可调，0.3~0.8 之间效果较好
-        X0 = X0 + alpha * F;
+        dist[u] = -1;
+        return false;
     }
 
-    std::cout << "Warning: Shooting method did NOT converge within max_iters.\n";
-    node_voltages = X0;
-
-    //展示节点电压结果
-    std::cout << "PSS Analysis Node Voltages:\n";
-    for (const auto& pair : ckt.node_map){
-        const std::string& node_name = pair.first;
-        int node_id = pair.second;
-        if (node_id == 0){
-            std::cout << "Node " << node_name << " (ID " << node_id << "): 0 V (Ground)\n";
+    // 匈牙利算法找到完美匹配
+    std::vector<int> solver::hungarianMatch(const Eigen::MatrixXd& matrix) {
+        int n = matrix.rows();
+        std::vector<std::vector<int>> graph(n);
+        
+        // 构建二分图：对于每行，选择绝对值最大的k个元素
+        // 这里选择前min(3, n)个最大元素，保证匹配存在
+        for (int i = 0; i < n; i++) {
+            std::vector<std::pair<double, int>> elements;
+            for (int j = 0; j < n; j++) {
+                elements.emplace_back(std::abs(matrix(i, j)), j);
+            }
+            // 按绝对值降序排序
+            std::sort(elements.begin(), elements.end(), 
+                     [](const auto& a, const auto& b) {
+                         return a.first > b.first;
+                     });
+            
+            // 取前k个作为候选边
+            int k = std::min(3, n);
+            for (int idx = 0; idx < k; idx++) {
+                graph[i].push_back(elements[idx].second);
+            }
         }
-        else{
-            std::cout << "Node " << node_name << " (ID " << node_id << "): " << node_voltages[node_id - 1] << " V\n";
+        
+        std::vector<int> pairU(n, -1);  // 行到列的匹配
+        std::vector<int> pairV(n, -1);  // 列到行的匹配
+        std::vector<int> dist(n);
+        
+        int matching = 0;
+        while (bfs_match(graph, pairU, pairV, dist, n)) {
+            for (int u = 0; u < n; u++) {
+                if (pairU[u] == -1 && dfs_match(u, graph, pairU, pairV, dist)) {
+                    matching++;
+                }
+            }
         }
+        
+        // 如果找到完美匹配，返回列置换
+        if (matching == n) {
+            return pairU;  // pairU[i] 表示第i行匹配的列
+        }
+        
+        // 如果没找到完美匹配，使用简单的贪心策略
+        std::vector<int> colMatch(n, -1);
+        std::vector<int> rowMatch(n, -1);
+        
+        for (int i = 0; i < n; i++) {
+            // 找到当前行中绝对值最大的可用列
+            int bestCol = -1;
+            double maxVal = -1;
+            
+            for (int j = 0; j < n; j++) {
+                if (colMatch[j] == -1) {
+                    double val = std::abs(matrix(i, j));
+                    if (val > maxVal) {
+                        maxVal = val;
+                        bestCol = j;
+                    }
+                }
+            }
+            
+            if (bestCol != -1) {
+                colMatch[bestCol] = i;
+                rowMatch[i] = bestCol;
+            }
+        }
+        
+        // 处理未匹配的行
+        for (int i = 0; i < n; i++) {
+            if (rowMatch[i] == -1) {
+                // 找到未使用的列
+                for (int j = 0; j < n; j++) {
+                    if (colMatch[j] == -1) {
+                        rowMatch[i] = j;
+                        colMatch[j] = i;
+                        break;
+                    }
+                }
+            }
+        }
+        
+        return rowMatch;
     }
-}
+
+
+    Eigen::MatrixXd solver::diagMax() {
+        int n = MNA_Y.rows();
+        
+        // 1. 找到列置换（通过最大匹配）
+        std::vector<int> colPerm = hungarianMatch(MNA_Y);
+        
+        // 2. 应用列置换到矩阵
+        Eigen::MatrixXd Y_perm_cols = Eigen::MatrixXd::Zero(n, n);
+        for (int i = 0; i < n; i++) {
+            Y_perm_cols.col(i) = MNA_Y.col(colPerm[i]);
+        }
+        
+        // 3. 应用行置换：将每行最大元素放到对角线
+        std::vector<int> rowPerm(n);
+        for (int i = 0; i < n; i++) {
+            // 找到当前行绝对值最大的元素
+            int maxIdx = 0;
+            double maxVal = std::abs(Y_perm_cols(i, 0));
+            for (int j = 1; j < n; j++) {
+                double val = std::abs(Y_perm_cols(i, j));
+                if (val > maxVal) {
+                    maxVal = val;
+                    maxIdx = j;
+                }
+            }
+            // 将最大元素所在的行换到对应列的位置
+            rowPerm[maxIdx] = i;
+        }
+        
+        // 检查rowPerm是否是有效排列
+        std::vector<bool> used(n, false);
+        for (int i = 0; i < n; i++) {
+            if (rowPerm[i] < 0 || rowPerm[i] >= n || used[rowPerm[i]]) {
+                // 如果排列无效，使用顺序排列
+                for (int j = 0; j < n; j++) rowPerm[j] = j;
+                break;
+            }
+            used[rowPerm[i]] = true;
+        }
+        
+        // 4. 应用行置换到矩阵和激励向量
+        Eigen::MatrixXd Y_perm = Eigen::MatrixXd::Zero(n, n);
+        Eigen::VectorXd J_perm(n);
+        for (int i = 0; i < n; i++) {
+            Y_perm.row(i) = Y_perm_cols.row(rowPerm[i]);
+            J_perm(i) = J(rowPerm[i]);
+        }
+        
+        // 5. 更新原始矩阵和激励向量
+        MNA_Y = Y_perm;
+        J = J_perm;
+        
+        // 6. 构建逆置换矩阵
+        // 逆置换顺序是：先逆行置换，再逆列置换
+        Eigen::MatrixXd inversePerm = Eigen::MatrixXd::Identity(n, n);
+        
+        // 逆列置换矩阵
+        Eigen::MatrixXd colPermMat = Eigen::MatrixXd::Zero(n, n);
+        for (int i = 0; i < n; i++) {
+            colPermMat(i, colPerm[i]) = 1.0;
+        }
+        
+        // 逆行置换矩阵
+        Eigen::MatrixXd rowPermMat = Eigen::MatrixXd::Zero(n, n);
+        for (int i = 0; i < n; i++) {
+            rowPermMat(rowPerm[i], i) = 1.0;  // 注意：这里是逆置换
+        }
+        
+        // 整体逆置换矩阵 = 逆列置换 * 逆行置换
+        // 因为原始变换是：Y_new = P_row * Y_old * P_col
+        // 所以恢复时需要：Y_old = P_row^T * Y_new * P_col^T
+        inversePerm = colPermMat.transpose() * rowPermMat.transpose();
+        
+        return inversePerm;
+    }
+
+
+    /**
+     * @brief 使用逆置换矩阵恢复解的顺序
+     * @param solution 置换后系统求得的解
+     * @param inversePerm 由diagMax()返回的逆置换矩阵
+     * @return 恢复原始顺序的解
+     */
+    Eigen::VectorXd solver::restoreOrder(const Eigen::VectorXd& solution, 
+                                        const Eigen::MatrixXd& inversePerm) {
+        return inversePerm * solution;
+    }
+    
+    /**
+     * @brief 检查矩阵是否对角占优
+     * @param threshold 严格对角占优的阈值
+     * @return 对角占优的行数
+     */
+    int solver::checkDiagonalDominance(double threshold) const {
+        int n = MNA_Y.rows();
+        int count = 0;
+        
+        for (int i = 0; i < n; i++) {
+            double diag = std::abs(MNA_Y(i, i));
+            double sum = 0.0;
+            
+            for (int j = 0; j < n; j++) {
+                if (j != i) {
+                    sum += std::abs(MNA_Y(i, j));
+                }
+            }
+            
+            if (diag > sum + threshold) {
+                count++;
+            }
+        }
+        
+        return count;
+    }

@@ -8,7 +8,7 @@
 
 using namespace std;
 
-int main_DC(){
+int main(){
     circuit ckt;
     vector<string> netlist;
     vector<analysis> analyses;
@@ -23,8 +23,8 @@ int main_DC(){
     initial_voltages["105"] = 1.0;
 
     solver sol(ckt, analyses[0]);
-    sol.setLinearSolverMethod(LinearSolverMethod::GAUSS_JACOBI);
-    sol.DC_solve(initial_voltages);
+    sol.setLinearSolverMethod(LinearSolverMethod::LU_DECOMPOSITION);
+    // sol.DC_solve(initial_voltages);
     sol.DC_solve();
     return 0;
 }
