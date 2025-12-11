@@ -179,5 +179,8 @@ class solver {
                                         const Eigen::MatrixXd& inversePerm);
     int checkDiagonalDominance(double threshold = 1e-6) const ;
 
+    Eigen::VectorXd run_transient_once(double T, double tstep, const Eigen::VectorXd &init_x);
+    void PSS_solve_shooting(double period_T, double tstep, int max_iters, double tol);
+
 };
 
