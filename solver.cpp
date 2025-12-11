@@ -24,6 +24,19 @@ solver::solver(circuit& ckt_, analysis& analysis_,
     // steady_state_method = SteadyStateMethod::SHOOTING;
 }
 
+void solver::print_node_voltages() {
+    std::cout << "Node Voltages:\n";
+    for (const auto& pair : ckt.node_map) {
+        const std::string& node_name = pair.first;
+        int node_id = pair.second;
+        if (node_id == 0) {
+            std::cout << "Node " << node_name << " (ID " << node_id << "): 0 V (Ground)\n";
+        } else {
+            std::cout << "Node " << node_name << " (ID " << node_id << "): " << node_voltages[node_id - 1] << " V\n";
+        }
+    }
+}
+
 //解析打印变量，填充ckt.print_node_ids，以及sources中器件的printI标志
 void solver::parse_print_variables() {
     ckt.print_node_ids.clear();

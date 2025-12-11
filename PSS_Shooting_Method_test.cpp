@@ -22,5 +22,8 @@ int main(){
     //用稳态分析得到的节点电压值跑一次瞬态
     cout << "Running transient simulation for one period to verify PSS result...\n";
     sol.TRAN_solve(period_T, period_T / 100);
+    //Debug:展示节点电压结果
+    cout << "\n\n\n";
+    sol.print_node_voltages();
     return 0;
 }

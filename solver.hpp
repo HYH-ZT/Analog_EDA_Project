@@ -132,7 +132,8 @@ class solver {
                LinearSolverMethod lsm = LinearSolverMethod::LU_DECOMPOSITION,
                TransientMethod tm = TransientMethod::TRAPEZOIDAL,
                SteadyStateMethod ssm = SteadyStateMethod::SHOOTING);
-        
+        // 输出各节点电压
+        void print_node_voltages();
         // 设置求解方法
         void setLinearSolverMethod(LinearSolverMethod method) { linear_solver_method = method; }
         void setTransientMethod(TransientMethod method) { transient_method = method; }

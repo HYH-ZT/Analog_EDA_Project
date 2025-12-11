@@ -8,7 +8,7 @@
 
 using namespace std;
 
-int main(){
+int main_dc_solve_test(){
     circuit ckt;
     vector<string> netlist;
     vector<analysis> analyses;
