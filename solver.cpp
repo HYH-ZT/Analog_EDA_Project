@@ -936,7 +936,7 @@ void solver::build_sources_MNA(bool in_tran,double time){
 
 //直流分析
 void solver::DC_solve() {
-    const int maxNewtonIter = 50;
+    const int maxNewtonIter = 200;
     const double tol = 1e-9;
 
     // //debug：打印所有器件信息
