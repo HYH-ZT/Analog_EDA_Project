@@ -171,7 +171,7 @@ static void parseAnalysisLine(const std::string& line, std::vector<analysis>& an
         a.parameters["harm"] = harm;
         analysis_list.push_back(a);
     }
-    else if (cmd == ".tran") {
+    else if (cmd == ".tran" || cmd == ".TRAN") {
         a.type = "TRAN";
         double step, stop;
         iss >> step >> stop;

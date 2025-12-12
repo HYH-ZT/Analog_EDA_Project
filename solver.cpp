@@ -735,7 +735,7 @@ void solver::build_nonlinear_MNA() {
         //处理gds，电导
         addToY(nd, nd, gds);
         addToY(nd, ns, -gds);
-        addToY(ns, ns, -gds);
+        addToY(ns, nd, -gds);
         addToY(ns, ns, gds);
 
         //处理Ieq，直流源
@@ -1499,6 +1499,17 @@ void solver::TRAN_solve(){
         //         std::cout << "Node " << node_name << " (ID " << node_id << "): " << node_voltages[node_id - 1] << " V\n";
         //     }
         // }
+
+        //记录需要画图节点此时的电压
+        for (auto plot_node_id : ckt.plot_node_ids){
+            double v = 0.0;
+            if (plot_node_id == 0) v = 0.0;
+            else if (plot_node_id - 1 >= 0 && plot_node_id - 1 < node_voltages.size()) v = node_voltages[plot_node_id - 1];
+            tran_plot_data[plot_node_id].push_back(std::make_pair(time, v));
+            //输出调试信息
+            //std::cout << "Plot Data - Time: " << time << " s, Node ID: " << plot_node_id << ", Voltage: " << v << " V\n";
+        }
+
         // 根据需要打印的变量，存到文件中
         {
             // 输出文件: transient_print.txt
@@ -1617,6 +1628,15 @@ void solver::TRAN_solve(double tstop, double tstep){
         //     }
         // }
 
+        //记录需要画图节点此时的电压
+        for (auto plot_node_id : ckt.plot_node_ids){
+            double v = 0.0;
+            if (plot_node_id == 0) v = 0.0;
+            else if (plot_node_id - 1 >= 0 && plot_node_id - 1 < node_voltages.size()) v = node_voltages[plot_node_id - 1];
+            tran_plot_data[plot_node_id].push_back(std::make_pair(time, v));
+            //输出调试信息
+            //std::cout << "Plot Data - Time: " << time << " s, Node ID: " << plot_node_id << ", Voltage: " << v << " V\n";
+        }
 
         //根据需要打印的变量，存到文件中
         {

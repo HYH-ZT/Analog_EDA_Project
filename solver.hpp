@@ -65,6 +65,8 @@ class solver {
         Eigen::VectorXd branch_currents;
         //动态器件名称到支路电流索引的映射
         std::map<std::string, int> dynamic_device_current_map;
+        //瞬态分析需要绘图的节点电压时间序列
+        std::map<int, std::vector<std::pair<double, double>>> tran_plot_data; //节点ID -> (时间, 电压)对列表
 
         //HB相关变量
         Eigen::VectorXcd hb_J; //HB电流源向量
@@ -157,6 +159,10 @@ class solver {
         void TRAN_solve();
         //
         void TRAN_solve(double tstop, double tstep);    //测试用
+        //获取瞬态绘图数据
+        const std::map<int, std::vector<std::pair<double, double>>>& get_tran_plot_data() const {
+            return tran_plot_data;
+        }
         //稳态分析
         //HB相关变量
         HB_params hb_params;
