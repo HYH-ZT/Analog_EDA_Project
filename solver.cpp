@@ -25,6 +25,19 @@ solver::solver(circuit& ckt_, analysis& analysis_,
     // steady_state_method = SteadyStateMethod::SHOOTING;
 }
 
+void solver::set_initial_node_voltages(std::string node_name, double voltage) {
+    int node_id = ckt.getNodeID(node_name);
+    if (node_id != -1) {
+        if (node_id == 0) {
+            std::cout << "Warning: Cannot set voltage for ground node.\n";
+        } else {
+            node_voltages[node_id - 1] = voltage;
+        }
+    } else {
+        std::cout << "Error: Node " << node_name << " not found in the circuit.\n";
+    }
+}
+
 void solver::print_node_voltages() {
     std::cout << "Node Voltages:\n";
     for (const auto& pair : ckt.node_map) {
@@ -706,11 +719,12 @@ void solver::build_nonlinear_MNA() {
             } else {
                 // 饱和区 (saturation)
                 // Id = 0.5 * beta * Vov^2 * (1 + lambda*Vds)
+                // LAMBDA = 0;
                 Id0 = 0.5 * beta * Vov * Vov * (1.0 + LAMBDA * Vds);
                 // gm = ∂Id/∂Vg = beta * Vov * (1 + lambda*Vds)
                 gm = beta * Vov * (1.0 + LAMBDA * Vds);
                 // gds = ∂Id/∂Vd = 0.5 * lambda * beta * Vov^2
-                gds = 0.5 * LAMBDA * beta * Vov;
+                gds = 1e-12 + 0.5 * LAMBDA * beta * Vov;
             }
             Ieq = Id0 - gm * Vgs - gds * Vds;
         }
@@ -936,7 +950,7 @@ void solver::build_sources_MNA(bool in_tran,double time){
 
 //直流分析
 void solver::DC_solve() {
-    const int maxNewtonIter = 200;
+    const int maxNewtonIter = 500;
     const double tol = 1e-9;
 
     // //debug：打印所有器件信息
@@ -969,8 +983,8 @@ void solver::DC_solve() {
     int nodeCount = (int)ckt.node_list.size() - 1;
     node_voltages = Eigen::VectorXd::Zero(nodeCount);
 
-
-    for (int iter = 0; iter < maxNewtonIter; iter++) {
+    int iter;
+    for (iter = 0; iter < maxNewtonIter; iter++) {
 
         // 2. 每次迭代重新构造 MNA
         MNA_Y = liner_Y;
@@ -982,10 +996,14 @@ void solver::DC_solve() {
         // 4. 电源 stamp
         build_sources_MNA();
 
-        // // Debug: 输出当前迭代的 MNA 矩阵和 J 向量
-        // std::cout << "Iteration " << iter + 1 << ":\n";
-        // std::cout << "MNA_Y:\n" << MNA_Y << "\n";
-        // std::cout << "J:\n" << J << "\n";
+        // Debug: 输出当前迭代的 MNA 矩阵和 J 向量
+        std::cout << "Iteration " << iter + 1 << ":\n";
+        //输出节点序号与名称对照
+        for (const auto& pair : ckt.node_map) {
+            std::cout << "Node ID " << pair.second << ": " << pair.first << "\n";
+        }
+        std::cout << "MNA_Y:\n" << MNA_Y << "\n";
+        std::cout << "J:\n" << J << "\n";
 
         // 5. 求解线性方程
         //保存旧节点电压用于收敛性检查
@@ -1002,6 +1020,10 @@ void solver::DC_solve() {
             std::cout << "Converged after " << iter + 1 << " iterations.\n";
             break;
         }
+    }
+
+    if(iter == maxNewtonIter){ 
+        std::cout << "Warning: DC did NOT converge.\n";
     }
 
     //std::cout << "DC did NOT converge.\n";
@@ -1027,7 +1049,7 @@ void solver::DC_solve() {
 
 // 使用节点名和电压值的映射来设置初值
 void solver::DC_solve(const std::map<std::string, double>& node_voltage_map, bool in_tran) {
-    const int maxNewtonIter = 50;
+    const int maxNewtonIter = 500;
     const double tol = 1e-9;
 
     // 1. 只构建一次线性矩阵
@@ -1054,8 +1076,8 @@ void solver::DC_solve(const std::map<std::string, double>& node_voltage_map, boo
             std::cout << "Warning: Node " << node_name << " not found in circuit\n";
         }
     }
-
-    for (int iter = 0; iter < maxNewtonIter; iter++) {
+    int iter;
+    for (iter = 0; iter < maxNewtonIter; iter++) {
 
         // 2. 每次迭代重新构造 MNA
         MNA_Y = liner_Y;
@@ -1092,6 +1114,9 @@ void solver::DC_solve(const std::map<std::string, double>& node_voltage_map, boo
             break;
         }
     }
+    if(iter == maxNewtonIter){ 
+        std::cout << "Warning: DC did NOT converge.\n";
+    }
 
     //std::cout << "DC did NOT converge.\n";
 
@@ -1111,7 +1136,7 @@ void solver::DC_solve(const std::map<std::string, double>& node_voltage_map, boo
 
 //根据给定的初始节点电压进行直流求解
 void solver::DC_solve(const Eigen::VectorXd& initial_node_voltages, bool in_tran,double time) {
-    const int maxNewtonIter = 50;
+    const int maxNewtonIter = 500;
     const double tol = 1e-9;
 
     // 1. 只构建一次线性矩阵
@@ -1124,8 +1149,9 @@ void solver::DC_solve(const Eigen::VectorXd& initial_node_voltages, bool in_tran
 
     int nodeCount = (int)ckt.node_list.size() - 1;
     node_voltages = initial_node_voltages;
-
-    for (int iter = 0; iter < maxNewtonIter; iter++) {
+    
+    int iter;
+    for (iter = 0; iter < maxNewtonIter; iter++) {
 
         // 2. 每次迭代重新构造 MNA
         MNA_Y = liner_Y;
@@ -1170,6 +1196,10 @@ void solver::DC_solve(const Eigen::VectorXd& initial_node_voltages, bool in_tran
             // std::cout << "Converged after " << iter + 1 << " iterations.\n";
             break;
         }
+    }
+
+    if(iter == maxNewtonIter){ 
+        std::cout << "Warning: DC did NOT converge.\n";
     }
 
     // //Debug展示节点电压结果

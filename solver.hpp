@@ -134,6 +134,8 @@ class solver {
                LinearSolverMethod lsm = LinearSolverMethod::LU_DECOMPOSITION,
                TransientMethod tm = TransientMethod::TRAPEZOIDAL,
                SteadyStateMethod ssm = SteadyStateMethod::SHOOTING);
+        // 给节点电压向量设置初值
+        void set_initial_node_voltages(std::string node_name, double voltage);
         // 获取ckt中要观察的节点列表
         const std::vector<int>& get_plot_node_ids() const { return ckt.plot_node_ids; }
         // 输出所有节点电压
