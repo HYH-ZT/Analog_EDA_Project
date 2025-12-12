@@ -60,6 +60,27 @@ int main(int argc, char* argv[]){
         else if (analysis.type == "TRAN"){
             double tstep = analysis.parameters.count("step") ? analysis.parameters["step"] : 1e-9;
             double tstop = analysis.parameters.count("stop") ? analysis.parameters["stop"] : 1e-6;
+            //选择瞬态分析方法
+            cout << "Select Transient analysis method:\n";
+            cout << "1. Forward Euler\n";
+            cout << "2. Backward Euler\n";
+            cout << "3. Trapezoidal\n";
+            int tran_method_choice;
+            cin >> tran_method_choice;
+            switch (tran_method_choice){
+                case 1:
+                    sol.setTransientMethod(TransientMethod::FORWARD_EULER);
+                    break;
+                case 2:
+                    sol.setTransientMethod(TransientMethod::BACKWARD_EULER);
+                    break;
+                case 3:
+                    sol.setTransientMethod(TransientMethod::TRAPEZOIDAL);
+                    break;
+                default:
+                    cout << "Invalid choice, using Trapezoidal method by default.\n";
+                    sol.setTransientMethod(TransientMethod::TRAPEZOIDAL);
+            }
             sol.TRAN_solve(tstop, tstep);
             //sol.TRAN_solve();
             cout << "Transient analysis completed.\n";
@@ -74,21 +95,21 @@ int main(int argc, char* argv[]){
             }
             //绘制要观察的节点电压波形，要求画在一个窗口里，并且坐标轴独立
             plt::figure();
-            for (const auto& tran_plot_pair : sol.get_tran_plot_data()){
-                int node_id = tran_plot_pair.first;
-                const auto& time_voltage_series = tran_plot_pair.second;
-                vector<double> times, voltages;
-                for (const auto& tv : time_voltage_series){
-                    times.push_back(tv.first);
-                    voltages.push_back(tv.second);
-                }
-                plt::plot(times, voltages, {{"label", "Node " + to_string(node_id)}});
-            }
-            plt::legend();
-            plt::xlabel("Time (s)");
-            plt::ylabel("Voltage (V)");
-            plt::title("Transient Analysis Node Voltages");
-            plt::grid(true);
+            for (const auto& tran_plot_pair : sol.get_tran_plot_data()){ 
+                int node_id = tran_plot_pair.first; 
+                const auto& time_voltage_series = tran_plot_pair.second; 
+                vector<double> times, voltages; 
+                for (const auto& tv : time_voltage_series){ 
+                    times.push_back(tv.first); 
+                    voltages.push_back(tv.second); 
+                } 
+                plt::plot(times, voltages, {{"label", "Node " + to_string(node_id) + "(" + ckt.node_list[node_id] + ")"}}); 
+            } 
+            plt::legend(); 
+            plt::xlabel("Time (s)"); 
+            plt::ylabel("Voltage (V)"); 
+            plt::title("Transient Analysis Node Voltages"); 
+            plt::grid(true); 
             plt::show();
         }
         // else if (analysis.type == "HB"){

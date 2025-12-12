@@ -868,6 +868,10 @@ void solver::build_sources_MNA(bool in_tran,double time){
                     double PHASE = dev.parameters["PHASE"];
                     double DC = dev.parameters["DC"];
                     value = DC + A * sin(2 * M_PI * FREQ * time + PHASE * M_PI / 180.0);
+                    
+                    //调试
+                    //std::cout << "Time: " << time << "s, Voltage Source " << dev.name << " Value: " << value << " V\n";
+                    //system("pause");  //调试
                 }
             }
             //先引入支路电流变量，从n1流向n2
@@ -1135,7 +1139,7 @@ void solver::DC_solve(const std::map<std::string, double>& node_voltage_map, boo
 }
 
 //根据给定的初始节点电压进行直流求解
-void solver::DC_solve(const Eigen::VectorXd& initial_node_voltages, bool in_tran,double time) {
+void solver::DC_solve(const Eigen::VectorXd& initial_node_voltages, bool in_tran, double time) {
     const int maxNewtonIter = 500;
     const double tol = 1e-9;
 
@@ -1643,7 +1647,7 @@ void solver::TRAN_solve(double tstop, double tstep){
 
         //直接调用DC求解器
         //求解非线性MNA方程，以上次节点电压为初值
-        DC_solve(node_voltages, true);
+        DC_solve(node_voltages, true, time);
 
         // //Debug:展示节点电压结果
         // std::cout << "Node Voltages at time " << time << " s:\n";
