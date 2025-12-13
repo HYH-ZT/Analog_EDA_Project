@@ -6,10 +6,17 @@
             "command": "C:\\msys64\\ucrt64\\bin\\g++.exe",
             "args": [
                 "-fdiagnostics-color=always",
-                "-g",
+
+                "-O3",
+                "-march=native",
+                //"-DNDEBUG",
+                "-ffast-math",
+                "-funroll-loops",
+
                 "*.cpp",
                 "-o",
                 "${fileDirname}\\${fileBasenameNoExtension}.exe",
+
                 "-I",
                 "F:\\Code\\Cpp\\EDA_Project\\Env\\eigen-5.0.0",
                 "-I",
@@ -18,6 +25,7 @@
                 "C:\\Users\\hyh91\\AppData\\Local\\Programs\\Python\\Python313\\include",
                 "-I",
                 "C:\\Users\\hyh91\\AppData\\Local\\Programs\\Python\\Python313\\Lib\\site-packages\\numpy\\_core\\include",
+
                 "-L",
                 "C:\\Users\\hyh91\\AppData\\Local\\Programs\\Python\\Python313\\libs",
                 "-lpython313"

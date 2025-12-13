@@ -4,8 +4,12 @@
 #include "circuit.hpp"
 #include <map>
 #include <string>
+#include <vector>
 #include <fstream>
 #include <chrono>
+#include <matplotlibcpp.h>
+
+namespace plt = matplotlibcpp;
 
 
 solver::solver(circuit& ckt_, analysis& analysis_, 
@@ -2450,7 +2454,12 @@ void solver::PSS_solve_harmonic_balance(){
     }
     //最终求解得到时域解
     hb_xt = hb_iDFT(hb_xw);
-
+    //给出稳态条件
+    node_voltages = Eigen::VectorXd(ckt.node_list.size() -1);
+    for(int i = 0; i < (ckt.node_list.size() -1); ++i){
+        node_voltages(i) = hb_xt(i).real();
+        //std::cout << "Steady-State Voltage at Node " << ckt.node_list[i +1] << ": " << node_voltages(i) << " V\n";
+    }
     // //Debug: 输出DFT和IDFT矩阵
     // std::cout << "DFT Matrix:\n" << hb_DFT_matrix << "\n";
     // std::cout << "IDFT Matrix:\n" << hb_iDFT_matrix << "\n";
@@ -2571,6 +2580,120 @@ void solver::PSS_solve_harmonic_balance(){
         }
 }
 
+void solver::PSS_solve_harmonic_balance(analysis& analysis, int max_iters, double tol, double relaxation_factor){
+    //根据网表设定参数
+    hb_params.fundamental_omega = 2 * 3.14159265358979323846 * analysis.parameters["freq"]; // 基频角频率
+    hb_params.num_harmonics = static_cast<int>(analysis.parameters["harm"]); // 谐波数量
+    hb_params.max_iterations = max_iters; // 最大迭代次数
+    hb_params.tolerance = tol; // 收敛容限
+    hb_params.relaxation_factor = relaxation_factor; // 松弛因子
+    ckt.extract_MOS_capacitances(); //提取MOS管寄生电容
+    HB_set_initial_xw({}); //空参数表示使用默认初始解
+    PSS_solve_harmonic_balance();
+    std::cout << "Harmonic Balance Analysis Completed.\n";
+}
+
+void solver::print_hb_time_domain_results(){
+    std::cout << "Time(s)";
+    for (int node_id : get_plot_node_ids()) {
+        std::string name = "NODE";
+        if (node_id >= 0 && node_id < (int)ckt.node_list.size()) name = ckt.node_list[node_id];
+        std::cout << "\tV(" << name << ")";
+    }
+    std::cout << "\n";
+
+    int N = 2 * hb_params.num_harmonics + 1;
+    double T = 1.0 / (hb_params.fundamental_omega / (2.0 * M_PI)); //周期
+    double time = 0.0;
+    for(int n = 0; n < N; ++n){
+        time = n * T / N;
+        //提取节点电压
+
+        Eigen::VectorXd hb_node_voltages(ckt.node_list.size() -1);
+        for(int i = 0; i < (ckt.node_list.size() - 1); ++i){
+            hb_node_voltages(i) = hb_xt(i + n * base_size).real();
+        }
+        //提取支路电流
+        // Eigen::VectorXd branch_currents(ckt.sources.size());
+        // for(int i = 0; i < ckt.sources.size(); ++i){
+        //     int branch_index = ckt.sources[i].branch_current_index + (ckt.node_list.size() -1);
+        //     branch_currents(i) = hb_xt(branch_index + n * base_size).real();
+        // }
+        std::cout << time;
+        for (int node_id : get_plot_node_ids()) {
+            double v = 0.0;
+            if (node_id == 0) v = 0.0;
+            else if (node_id - 1 >= 0 && node_id - 1 < hb_node_voltages.size()) v = hb_node_voltages[node_id - 1];
+            std::cout << "\t" << v;
+        }
+        std::cout << "\n";
+    }
+}
+
+void solver::print_hb_frequency_domain_results(){
+    //打印频域结果
+    int N = 2 * hb_params.num_harmonics + 1;
+    std::cout << "\nFrequency Domain Results:\n";
+    std::cout << "Harmonic\tFrequency(Hz)";
+    for (int node_id : get_plot_node_ids()) {
+        std::string name = "NODE";
+        if (node_id >= 0 && node_id < (int)ckt.node_list.size()) name = ckt.node_list[node_id];
+        std::cout << "\tV(" << name << ")";
+    }
+    std::cout << "\n";
+    for (int h = 0; h < N; ++h) {
+        Eigen::VectorXcd hb_node_vw(ckt.node_list.size() -1);
+        for(int i = 0; i < (ckt.node_list.size() -1); ++i){
+            hb_node_vw(i) = hb_xw(i + h * base_size);
+        }
+        std::cout << h - hb_params.num_harmonics << "\t" << ((h - hb_params.num_harmonics) * (hb_params.fundamental_omega / (2.0 * M_PI)));
+        for (int node_id : get_plot_node_ids()) {
+            std::complex<double> v = 0.0;
+            if (node_id == 0) v = 0.0;
+            else if (node_id - 1 >= 0 && node_id - 1 < hb_node_vw.size()) v = hb_node_vw[node_id - 1];
+            std::cout << "\t" << v;
+        }
+        std::cout << "\n";
+    }
+}
+
+void solver::plot_hb_time_domain_results() {
+    // 时间采样点数
+    int N = 2 * hb_params.num_harmonics + 1;
+    double T = 1.0 / (hb_params.fundamental_omega / (2.0 * M_PI)); //周期
+
+    // 构造时间轴
+    std::vector<double> time_points;
+    for (int n = 0; n < N; ++n) {
+        time_points.push_back(n * T / N);
+    }
+
+    // 创建一个图
+    plt::figure();
+
+    for (int node_id : get_plot_node_ids()) {
+        std::string name = "NODE";
+        if (node_id >= 0 && node_id < (int)ckt.node_list.size())
+            name = ckt.node_list[node_id];
+        // 提取节点电压
+        std::vector<double> voltages;
+        for (int n = 0; n < N; ++n) {
+            voltages.push_back(hb_xt((node_id - 1) + n * base_size).real());
+            std::cout << time_points[n] << "\t" << voltages[n] << "\n";
+        }
+        // 绘制节点电压波形
+        plt::plot(time_points, voltages, {{"label", "Node " + name}});
+        std::cout << "Plotted Node " << name << " voltage.\n";
+    }
+    plt::legend();
+    plt::title("HB Time-Domain Node Voltages");
+    plt::xlabel("Time (s)");
+    plt::ylabel("Voltage (V)");
+    plt::grid(true);
+    plt::show();
+
+    std::cout << "Plotted HB time-domain voltages for all nodes.\n";
+}
 
 
 
@@ -2842,16 +2965,20 @@ Eigen::VectorXd solver::run_transient_once(double T, double tstep, const Eigen::
         build_transient_ckt(tstep);
 
         // 以当前 node_voltages 为初值求解非线性 MNA
-        DC_solve(node_voltages, true);
+        DC_solve(node_voltages, true, time);
 
         // node_voltages 会在 DC_solve 中被更新，无需额外处理
-        std::cout << node_voltages.size() << std::endl;
+        //std::cout << node_voltages.size() << std::endl;
     }
 
     return node_voltages;   // 即 v(T)
 }
 
 void solver::PSS_solve_shooting(double period_T, double tstep, int max_iters, double tol){
+    
+    //提取电容信息
+    ckt.extract_MOS_capacitances();
+
     // 节点个数
     int N = ckt.node_map.size() - 1;
 
@@ -2893,16 +3020,16 @@ void solver::PSS_solve_shooting(double period_T, double tstep, int max_iters, do
     std::cout << "Warning: Shooting method did NOT converge within max_iters.\n";
     node_voltages = X0;
 
-    //展示节点电压结果
-    std::cout << "PSS Analysis Node Voltages:\n";
-    for (const auto& pair : ckt.node_map){
-        const std::string& node_name = pair.first;
-        int node_id = pair.second;
-        if (node_id == 0){
-            std::cout << "Node " << node_name << " (ID " << node_id << "): 0 V (Ground)\n";
-        }
-        else{
-            std::cout << "Node " << node_name << " (ID " << node_id << "): " << node_voltages[node_id - 1] << " V\n";
-        }
-    }
+    // //展示节点电压结果
+    // std::cout << "PSS Analysis Node Voltages:\n";
+    // for (const auto& pair : ckt.node_map){
+    //     const std::string& node_name = pair.first;
+    //     int node_id = pair.second;
+    //     if (node_id == 0){
+    //         std::cout << "Node " << node_name << " (ID " << node_id << "): 0 V (Ground)\n";
+    //     }
+    //     else{
+    //         std::cout << "Node " << node_name << " (ID " << node_id << "): " << node_voltages[node_id - 1] << " V\n";
+    //     }
+    // }
 }

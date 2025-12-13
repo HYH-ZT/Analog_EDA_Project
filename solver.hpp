@@ -80,7 +80,7 @@ class solver {
         Eigen::MatrixXcd hb_F2T_matrix; //把频域解变换为时域解的矩阵
         Eigen::MatrixXcd hb_T2F_matrix; //把时域解变换为频域解的矩阵
         Eigen::VectorXcd hb_xw; //HB频域解
-        Eigen::VectorXcd hb_xt; //HB时域解
+        //Eigen::VectorXcd hb_xt; //HB时域解
 
         //构建线性MNA矩阵和J向量
         void build_linear_MNA(bool in_tran = false);
@@ -116,7 +116,7 @@ class solver {
         void build_transient_ckt(double tstep);
 
         //HB相关函数
-        int base_size;  //在build_linear_MNA中初始化，表示单频点矩阵大小
+        // int base_size;  //在build_linear_MNA中初始化，表示单频点矩阵大小
         void build_linear_MNA_frequency(Eigen::MatrixXcd& liner_Y_freq, double omega);
         void hb_build_linear_MNA();
         void hb_initialize_DFT_matrices();
@@ -130,6 +130,8 @@ class solver {
 
 
     public:
+        Eigen::VectorXcd hb_xt;
+        int base_size; //基频点矩阵大小
         solver(circuit& ckt_, analysis& analysis_, 
                LinearSolverMethod lsm = LinearSolverMethod::LU_DECOMPOSITION,
                TransientMethod tm = TransientMethod::TRAPEZOIDAL,
@@ -171,10 +173,13 @@ class solver {
         //设置HB初始频域解
         void HB_set_initial_xw(const std::map<std::string, double>& node_voltage_map);
         void PSS_solve();
-        void PSS_solve_shooting();
+        Eigen::VectorXd run_transient_once(double T, double tstep, const Eigen::VectorXd &init_x);
+        void PSS_solve_shooting(double period_T, double tstep, int max_iters = 200, double tol = 1e-6);
         void PSS_solve_harmonic_balance();
-
-
+        void PSS_solve_harmonic_balance(analysis& analysis, int max_iters = 50, double tol = 1e-6, double relaxation = 1.0);
+        void print_hb_time_domain_results();
+        void print_hb_frequency_domain_results();
+        void plot_hb_time_domain_results();
 
         //神秘实验内容：主元最优置换
     bool bfs_match(const std::vector<std::vector<int>>& graph, 
@@ -193,8 +198,7 @@ class solver {
                                         const Eigen::MatrixXd& inversePerm);
     int checkDiagonalDominance(double threshold = 1e-6) const ;
 
-    Eigen::VectorXd run_transient_once(double T, double tstep, const Eigen::VectorXd &init_x);
-    void PSS_solve_shooting(double period_T, double tstep, int max_iters, double tol);
+
 
 };
 

@@ -163,7 +163,7 @@ static void parseAnalysisLine(const std::string& line, std::vector<analysis>& an
     std::string cmd;
     iss >> cmd;
 
-    if (cmd == ".hb") {
+    if (cmd == ".hb" || cmd == ".HB") {
         a.type = "HB";
         double freq, harm;
         iss >> freq >> harm;
@@ -181,6 +181,13 @@ static void parseAnalysisLine(const std::string& line, std::vector<analysis>& an
     }
     else if (cmd == ".dc") {
         a.type = "DC";
+        analysis_list.push_back(a);
+    }
+    else if (cmd == ".shooting" || cmd == ".SHOOTING") {
+        a.type = "SHOOTING";
+        double freq;
+        iss >> freq;
+        a.parameters["freq"] = freq;
         analysis_list.push_back(a);
     }
     else if (cmd == ".print") {
