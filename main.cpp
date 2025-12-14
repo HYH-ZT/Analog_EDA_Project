@@ -193,9 +193,11 @@ int main(int argc, char* argv[]){
             for (int node_id : sol.get_plot_node_ids()){
                 sol.print_node_voltage(node_id);
             }
-            //跑一次瞬态以获得时域波形
-            // To DO: 需要一个带初值的TRAN求解接口
-            sol.TRAN_solve(period_T, tstep);
+
+            // //跑一次瞬态以获得时域波形
+            // // To DO: 需要一个带初值的TRAN求解接口
+            // sol.TRAN_solve(period_T, tstep);
+            // 干脆直接取最后一次迭代的瞬态波形
             //绘制节点时域波形
             plt::figure();
             for (const auto& tran_plot_pair : sol.get_tran_plot_data()){ 

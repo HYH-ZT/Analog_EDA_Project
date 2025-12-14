@@ -1617,6 +1617,7 @@ void solver::TRAN_solve(double tstop, double tstep){
     // double tstop = analysis_type.parameters["tstop"];
     // double tstep = analysis_type.parameters["tstep"];
     int steps = static_cast<int>(tstop / tstep);
+    tran_plot_data.clear();
     for (int step = 0; step <= steps; ++step){
         double time = step * tstep;
         std::cout << "Transient Analysis Time: " << time << " s\n";
@@ -2958,6 +2959,7 @@ Eigen::VectorXd solver::run_transient_once(double T, double tstep, const Eigen::
     // 计算步数
     int steps = static_cast<int>(T / tstep);
 
+    tran_plot_data.clear();
     for (int step = 0; step <= steps; step++) {
         double time = step * tstep;
 
@@ -2969,6 +2971,16 @@ Eigen::VectorXd solver::run_transient_once(double T, double tstep, const Eigen::
 
         // node_voltages 会在 DC_solve 中被更新，无需额外处理
         //std::cout << node_voltages.size() << std::endl;
+
+        //记录需要画图节点此时的电压
+        for (auto plot_node_id : ckt.plot_node_ids){
+            double v = 0.0;
+            if (plot_node_id == 0) v = 0.0;
+            else if (plot_node_id - 1 >= 0 && plot_node_id - 1 < node_voltages.size()) v = node_voltages[plot_node_id - 1];
+            tran_plot_data[plot_node_id].push_back(std::make_pair(time, v));
+            //输出调试信息
+            //std::cout << "Plot Data - Time: " << time << " s, Node ID: " << plot_node_id << ", Voltage: " << v << " V\n";
+        }
     }
 
     return node_voltages;   // 即 v(T)
