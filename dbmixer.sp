@@ -41,14 +41,17 @@ Rs2 113 111 25
 .MODEL 1 VT -0.58281 MU 1.224952e-2 COX 6.058e-3 LAMBDA 0.05 CJ0 4.0e-14
 .MODEL 2 VT 0.386 MU 3.0238e-2 COX 6.058e-3 LAMBDA 0.05 CJ0 4.0e-14
 
-*.tran 1e-13 4e-9
+*.tran 1e-11 1e-8
 *.print tran V(102) V(103) V(112) V(113) V(154) V(164) V(107) I(Vdd)
 
-.hb 100e6 50
-.print hb V(102) V(103) V(112) V(113) V(154) V(164) I(Vdd)
+*.hb 100e6 50
+*.print hb V(102) V(103) V(112) V(113) V(154) V(164) I(Vdd).
+
+.shooting 100e6
 
 *.dc
 .plotnv  102
+.plotnv  107
 .plotnv  103 
 .plotnv  112 
 .plotnv  113 

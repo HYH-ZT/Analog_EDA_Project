@@ -3222,7 +3222,7 @@ void solver::plot_hb_time_domain_results() {
         return count;
     }
 
-    // 运行一次瞬态，用给定初始条件 init_x，返回 T 处的节点电压
+// 运行一次瞬态，用给定初始条件 init_x，返回 T 处的节点电压
 Eigen::VectorXd solver::run_transient_once(double T, double tstep, const Eigen::VectorXd &init_x)
 {
     // 设置初始节点电压
@@ -3237,7 +3237,7 @@ Eigen::VectorXd solver::run_transient_once(double T, double tstep, const Eigen::
 
         // 构建瞬态分析电路
         build_transient_ckt(tstep);
-
+        
         // 以当前 node_voltages 为初值求解非线性 MNA
         DC_solve(node_voltages, true, time);
 
@@ -3253,13 +3253,23 @@ Eigen::VectorXd solver::run_transient_once(double T, double tstep, const Eigen::
             //输出调试信息
             //std::cout << "Plot Data - Time: " << time << " s, Node ID: " << plot_node_id << ", Voltage: " << v << " V\n";
         }
+        //记录需要画图的支路电流
+        for (auto plot_current_dev_index : ckt.plot_branch_current_indices){
+            if(plot_current_dev_index >=0 && plot_current_dev_index < ckt.sources.size()){
+                double i = branch_currents[plot_current_dev_index];
+                tran_plot_data[node_voltages.size() + plot_current_dev_index].push_back(std::make_pair(time, i));
+                //输出调试信息
+                //std::cout << "Plot Data - Time: " << time << " s, Branch Index: " << plot_current_dev_index << ", Current: " << i << " A\n";
+            }
+        }
     }
-
     return node_voltages;   // 即 v(T)
 }
 
 void solver::PSS_solve_shooting(double period_T, double tstep, int max_iters, double tol){
-    
+    //确定需要打印的变量
+    parse_print_variables();
+
     //提取电容信息
     ckt.extract_MOS_capacitances();
 
@@ -3271,8 +3281,8 @@ void solver::PSS_solve_shooting(double period_T, double tstep, int max_iters, do
     Eigen::VectorXd X0 = Eigen::VectorXd::Zero(N);
 
     std::cout << "Shooting Method Start: N = " << N << "\n";
-
-    for (int iter = 0; iter < max_iters; iter++)
+    int iter = 0;
+    for (iter = 0; iter < max_iters; iter++)
     {
         std::cout << "=== Shooting Iteration " << iter << " ===\n";
 
@@ -3299,11 +3309,12 @@ void solver::PSS_solve_shooting(double period_T, double tstep, int max_iters, do
         // 松弛法：X0 ← X0 + α*(XT - X0)
         double alpha = 0.5;   // 可调，0.3~0.8 之间效果较好
         X0 = X0 + alpha * F;
+        node_voltages = X0; // 临时存储当前初始条件
     }
-
-    std::cout << "Warning: Shooting method did NOT converge within max_iters.\n";
-    node_voltages = X0;
-
+    if (iter == max_iters){
+        std::cout << "Warning: Shooting method did NOT converge within max_iters.\n";
+        node_voltages = X0;
+    }
     // //展示节点电压结果
     // std::cout << "PSS Analysis Node Voltages:\n";
     // for (const auto& pair : ckt.node_map){

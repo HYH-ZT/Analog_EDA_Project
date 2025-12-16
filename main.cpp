@@ -299,6 +299,14 @@ int main(int argc, char* argv[]){
             double period_T = 1.0 / freq;
             double tstep = period_T / 1000.0; //默认时间步长为周期的1/1000
             sol.PSS_solve_shooting(period_T, tstep);
+
+            // // Debug: 输出要plot的节点ID
+            // cout << "Nodes to plot:\n";
+            // for (int node_id : sol.get_plot_node_ids()){
+            //     cout << "Node ID: " << node_id << "\n";
+            // }
+            // system("pause");
+
             //打印要观察的节点电压
             for (int node_id : sol.get_plot_node_ids()){
                 sol.print_node_voltage(node_id);
@@ -309,23 +317,70 @@ int main(int argc, char* argv[]){
             // sol.TRAN_solve(period_T, tstep);
             // 干脆直接取最后一次迭代的瞬态波形
             //绘制节点时域波形
-            plt::figure();
+            plt::figure(1);
             for (const auto& tran_plot_pair : sol.get_tran_plot_data()){ 
                 int node_id = tran_plot_pair.first; 
                 const auto& time_voltage_series = tran_plot_pair.second; 
-                vector<double> times, voltages; 
+                vector<double> times, values; 
                 for (const auto& tv : time_voltage_series){ 
                     times.push_back(tv.first); 
-                    voltages.push_back(tv.second); 
+                    values.push_back(tv.second); 
                 } 
-                plt::plot(times, voltages, {{"label", "Node " + to_string(node_id) + "(" + ckt.node_list[node_id] + ")"}}); 
+                if (node_id >= 0 && node_id < (int)ckt.node_list.size()){
+                    plt::plot(times, values, {{"label", "Node " + to_string(node_id) + "(" + ckt.node_list[node_id] + ") Voltage"}}); 
+                }
+                else {
+                    continue;
+                }
             } 
             plt::legend(); 
             plt::xlabel("Time (s)"); 
-            plt::ylabel("Voltage (V)"); 
+            plt::ylabel("Value (V)"); 
             plt::title("Transient Analysis Node Voltages"); 
             plt::grid(true); 
             plt::show();
+
+            plt::figure(2);
+            for (const auto& tran_plot_pair : sol.get_tran_plot_data()){ 
+                int node_id = tran_plot_pair.first; 
+                const auto& time_voltage_series = tran_plot_pair.second; 
+                vector<double> times, values; 
+                for (const auto& tv : time_voltage_series){ 
+                    times.push_back(tv.first); 
+                    values.push_back(tv.second); 
+                } 
+                if (node_id >= 0 && node_id < (int)ckt.node_list.size()){
+                    continue;
+                }
+                else {
+                    std::cout << "Plotting current for branch current index: " << -node_id << ckt.sources[-node_id-1].name << "\n";
+                    plt::plot(times, values, {{"label", "I(" + ckt.sources[-node_id-1].name + ") "}}); 
+                }
+            } 
+            plt::legend(); 
+            plt::xlabel("Time (s)"); 
+            plt::ylabel("Current (A)"); 
+            plt::title("Transient Analysis Branch Currents"); 
+            plt::grid(true); 
+            plt::show();
+
+            // plt::figure();
+            // for (const auto& tran_plot_pair : sol.get_tran_plot_data()){ 
+            //     int node_id = tran_plot_pair.first; 
+            //     const auto& time_voltage_series = tran_plot_pair.second; 
+            //     vector<double> times, voltages; 
+            //     for (const auto& tv : time_voltage_series){ 
+            //         times.push_back(tv.first); 
+            //         voltages.push_back(tv.second); 
+            //     } 
+            //     plt::plot(times, voltages, {{"label", "Node " + to_string(node_id) + "(" + ckt.node_list[node_id] + ")"}}); 
+            // } 
+            // plt::legend(); 
+            // plt::xlabel("Time (s)"); 
+            // plt::ylabel("Voltage (V)"); 
+            // plt::title("Transient Analysis Node Voltages"); 
+            // plt::grid(true); 
+            // plt::show();
         }
         else {
             cerr << "Unknown analysis type: " << analysis.type << "\n";
