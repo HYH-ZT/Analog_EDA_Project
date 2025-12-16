@@ -221,10 +221,22 @@ static void parseAnalysisLine(const std::string& line, std::vector<analysis>& an
     else if (cmd == ".plotnv" || cmd == ".PLOTNV") {
         // .PLOTNV命令: .PLOTNV V(1) V(2) V(3)
         std::string nodeName;
-        while (iss >> nodeName) {
-            ckt.plot_node_names.push_back(nodeName);
-            int nodeID = ckt.getNodeID(nodeName);
-            ckt.plot_node_ids.push_back(nodeID);
+        // while (iss >> nodeName) {
+        //     ckt.plot_node_names.push_back(nodeName);
+        //     int nodeID = ckt.getNodeID(nodeName);
+        //     ckt.plot_node_ids.push_back(nodeID);
+        // }
+        
+        //处理电流
+        std::vector<std::string> parts;
+        while(iss >> nodeName){
+            parts.push_back(nodeName);
+        }
+        //加入到所有分析中
+        for(auto& a : analysis_list){
+            for(const auto& part : parts){
+                a.plot_variables.push_back(part);
+            }
         }
     }
 }
