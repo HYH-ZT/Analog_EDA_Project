@@ -1917,6 +1917,40 @@ void solver::TRAN_solve(double tstop, double tstep,int use_initial_dc){
 }
 
 
+//瞬态分析，初值可调节
+void solver::TRAN_solve_with_initial_value(double tstop, double tstep){
+    int steps = static_cast<int>(tstop / tstep);
+    tran_plot_data.clear();
+    for (int step = 0; step <= steps; ++step){
+        double time = step * tstep;
+        // std::cout << "Transient Analysis Time: " << time << " s\n";
+
+        //直接调用DC求解器
+        //求解非线性MNA方程，以上次节点电压为初值
+        DC_solve(node_voltages, true, time);
+
+        //记录需要画图节点此时的电压
+        for (auto plot_node_id : ckt.plot_node_ids){
+            double v = 0.0;
+            if (plot_node_id == 0) v = 0.0;
+            else if (plot_node_id - 1 >= 0 && plot_node_id - 1 < node_voltages.size()) v = node_voltages[plot_node_id - 1];
+            tran_plot_data[plot_node_id].push_back(std::make_pair(time, v));
+            //输出调试信息
+            //std::cout << "Plot Data - Time: " << time << " s, Node ID: " << plot_node_id << ", Voltage: " << v << " V\n";
+        }
+        //记录需要画图的支路电流
+        for (auto plot_current_dev_index : ckt.plot_branch_current_indices){
+            if(plot_current_dev_index >=0 && plot_current_dev_index < ckt.sources.size()){
+                double i = branch_currents[plot_current_dev_index];
+                tran_plot_data[-(plot_current_dev_index+1)].push_back(std::make_pair(time, i));
+                // //输出调试信息
+                // std::cout << "save current index" <<plot_current_dev_index+1 << "\n";
+                //std::cout << "Plot Data - Time: " << time << " s, Branch Index: " << plot_current_dev_index << ", Current: " << i << " A\n";
+            }
+        }
+    }
+}
+
 // HB分析
 void solver::hb_build_linear_MNA(){
     //先对直流点构建线性MNA矩阵,只能进行一次，电感会贴出来很多个电压源
@@ -3236,8 +3270,6 @@ std::pair<Eigen::VectorXd, Eigen::VectorXd> solver::run_transient_once(double T,
     //std::cout << branch_currents[0] << "\n\n";
     //system("pause");
     for (int step = 0; step <= steps + 1; step++) {
-        //branch_currents = Eigen::VectorXd::Zero(ckt.sources.size()); // 初始化支路电流为0
-        node_voltages = Eigen::VectorXd::Zero(ckt.node_map.size() - 1); // 初始化节点电压为0
         double time = step * tstep;
 
         // 构建瞬态分析电路
@@ -3441,4 +3473,90 @@ void solver::PSS_solve_shooting_exact_jacobian(double period_T, double tstep, in
     }
     
     std::cout << "Warning: Not converged" << std::endl;
+}
+
+void solver::PSS_solve_shooting_new(double period_T, double tstep, int max_iters, double tol){
+    //确定需要打印的变量
+    parse_print_variables();
+
+    //提取电容信息
+    ckt.extract_MOS_capacitances();
+
+    // ---- Step 0：初始化初始条件 X0 ----
+    // 你可以用 DC 解，或者直接用 0
+    DC_solve();
+    int N;
+    int iter = 0;
+    for (iter = 0; iter < max_iters; iter++)
+    {
+        std::cout << "=== Shooting Iteration " << iter << " ===\n";
+
+        Eigen::VectorXd V0 = node_voltages; // 初始节点电压
+
+        //构建瞬态分析电路
+        build_transient_ckt(tstep);
+
+        // ---- Step1：从 X0 出发运行瞬态，得到周期末 v(T) ----
+        //基准transient求解
+        TRAN_solve_with_initial_value(period_T, tstep);
+
+        Eigen::VectorXd VT = node_voltages;
+
+        if (iter == 0){
+            N = VT.size();
+            V0 = Eigen::VectorXd::Zero(N);
+        }
+
+        // ---- Step2：误差 F = XT - X0 ----
+        //std::cout << VT << "\n\n" << V0 << "\n";
+        Eigen::VectorXd F = VT - V0;
+        double err = F.norm();
+
+        std::cout << "Error norm = " << err << "\n";
+
+        // ---- Step3：检查收敛 ----
+        if (err < tol) {
+            std::cout << "Shooting method converged.\n";
+            break;
+        }
+
+        // ---- Step4：更新初始条件 ----
+
+        // // 松弛法：X0 ← X0 + α*(XT - X0)
+        // double alpha = 0.5;   // 可调，0.3~0.8 之间效果较好
+        // node_voltages = V0 + alpha * (VT - V0); // 临时存储当前初始条件
+
+        // 牛顿法：X0 ← X0 - J^{-1} * F
+        Eigen::MatrixXd J(N, N);
+        double eps = 1e-9;
+        for (int j = 0; j < N; j++) {
+            Eigen::VectorXd V0_perturbed = V0;
+            V0_perturbed(j) += eps; // 小扰动
+
+            node_voltages = V0_perturbed;
+
+            //扰动后transient求解
+            TRAN_solve_with_initial_value(period_T, tstep);
+            J.col(j) = (node_voltages - VT) / eps;
+        }
+        Eigen::MatrixXd JF = J - Eigen::MatrixXd::Identity(N, N);
+        Eigen::VectorXd delta_V = JF.fullPivLu().solve(-F);
+
+        node_voltages = V0 + delta_V;
+    }
+    if (iter == max_iters){
+        std::cout << "Warning: Shooting method did NOT converge within max_iters.\n";
+    }
+    // //展示节点电压结果
+    // std::cout << "PSS Analysis Node Voltages:\n";
+    // for (const auto& pair : ckt.node_map){
+    //     const std::string& node_name = pair.first;
+    //     int node_id = pair.second;
+    //     if (node_id == 0){
+    //         std::cout << "Node " << node_name << " (ID " << node_id << "): 0 V (Ground)\n";
+    //     }
+    //     else{
+    //         std::cout << "Node " << node_name << " (ID " << node_id << "): " << node_voltages[node_id - 1] << " V\n";
+    //     }
+    // }
 }

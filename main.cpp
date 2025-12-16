@@ -304,7 +304,7 @@ int main(int argc, char* argv[]){
 
             double period_T = 1.0 / freq;
             double tstep = period_T / N_sample; //默认时间步长为周期的1/1000
-            sol.PSS_solve_shooting(period_T, tstep);
+            sol.PSS_solve_shooting_new(period_T, tstep);
             //sol.PSS_solve_shooting_exact_jacobian(period_T, tstep);
 
             // // Debug: 输出要plot的节点ID

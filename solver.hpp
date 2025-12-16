@@ -164,7 +164,9 @@ class solver {
         //瞬态分析
         void TRAN_solve();
         //
-        void TRAN_solve(double tstop, double tstep,int use_initial_dc);    
+        void TRAN_solve(double tstop, double tstep,int use_initial_dc); 
+        //
+        void TRAN_solve_with_initial_value(double tstop, double tstep);   
         //获取瞬态绘图数据
         const std::map<int, std::vector<std::pair<double, double>>>& get_tran_plot_data() const {
             return tran_plot_data;
@@ -177,6 +179,7 @@ class solver {
         void PSS_solve();
         std::pair<Eigen::VectorXd, Eigen::VectorXd> run_transient_once(double T, double tstep, const Eigen::VectorXd& init_V, const Eigen::VectorXd& init_I);
         void PSS_solve_shooting(double period_T, double tstep, int max_iters = 200, double tol = 1e-6);
+        void PSS_solve_shooting_new(double period_T, double tstep, int max_iters = 200, double tol = 1e-6);
         void PSS_solve_shooting_exact_jacobian(double period_T, double tstep, int max_iters = 200, double tol = 1e-6);
         void PSS_solve_harmonic_balance();
         void PSS_solve_harmonic_balance(analysis& analysis, int max_iters = 50, double tol = 1e-6, double relaxation = 1.0);
