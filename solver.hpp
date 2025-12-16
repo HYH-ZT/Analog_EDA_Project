@@ -140,6 +140,8 @@ class solver {
         void set_initial_node_voltages(std::string node_name, double voltage);
         // 获取ckt中要观察的节点列表
         const std::vector<int>& get_plot_node_ids() const { return ckt.plot_node_ids; }
+        const std::vector<int>& get_plot_current_ids() const { return ckt.plot_branch_current_indices; }
+        const int get_voltage_node_size() const { return ckt.node_list.size() - 1; } //不含地节点
         // 输出所有节点电压
         void print_node_voltages();
         // 输出指定节点电压
@@ -162,7 +164,7 @@ class solver {
         //瞬态分析
         void TRAN_solve();
         //
-        void TRAN_solve(double tstop, double tstep);    //测试用
+        void TRAN_solve(double tstop, double tstep,int use_initial_dc);    
         //获取瞬态绘图数据
         const std::map<int, std::vector<std::pair<double, double>>>& get_tran_plot_data() const {
             return tran_plot_data;

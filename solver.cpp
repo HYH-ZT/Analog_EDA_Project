@@ -12,6 +12,7 @@
 namespace plt = matplotlibcpp;
 
 
+
 solver::solver(circuit& ckt_, analysis& analysis_, 
                LinearSolverMethod lsm, 
                TransientMethod tm,
@@ -78,6 +79,17 @@ void solver::print_node_voltage(const std::string& node_name) {
 //解析打印变量，填充ckt.print_node_ids，以及sources中器件的printI标志
 void solver::parse_print_variables() {
     ckt.print_node_ids.clear();
+    ckt.plot_node_ids.clear();
+    //Debug: 输出要解析的打印变量
+    std::cout << analysis_type.print_variables.size() << " print variables to parse:\n";
+    for (const auto& var : analysis_type.print_variables) {
+        std::cout << "  " << var << "\n";
+    }
+    std::cout << analysis_type.plot_variables.size() << " plot variables to parse:\n";
+    for (const auto& var : analysis_type.plot_variables) {
+        std::cout << "  " << var << "\n";
+    }
+
     for (const auto& var : analysis_type.print_variables) {
         if (var[0] == 'V' && var[1] == '(' && var.back() == ')') {
             //节点电压变量
@@ -104,6 +116,33 @@ void solver::parse_print_variables() {
             }
         } else {
             std::cout << "Warning: Unrecognized print variable format: " << var << "\n";
+        }
+    }
+    for (const auto& var : analysis_type.plot_variables) {
+        if (var[0] == 'I' && var[1] == '(' && var.back() == ')') {
+            //支路电流变量
+            std::string device_name = var.substr(2, var.size() - 3);
+            bool found = false;
+            for (auto& src : ckt.sources) {
+                if (src.name == device_name) {
+                    src.plotI = true; //标记该器件需要打印电流
+                    found = true;
+                    break;
+                }
+            }
+            if (!found) {
+                std::cout << "Warning: Source " << device_name << " not found for printing current.\n";
+            }
+        }
+        else{
+            //节点电压变量
+            std::string node_name = var;
+            int node_id = ckt.getNodeID(node_name);
+            if (node_id != -1) {
+                ckt.plot_node_ids.push_back(node_id);
+            } else {
+                std::cout << "Warning: Node " << node_name << " not found for printing voltage.\n";
+            }
         }
     }
 }
@@ -385,51 +424,131 @@ void solver::solve_linear_MNA_Gauss_Jacobi(){
     // std::cout << "J:\n" << J << "\n";
     //先进行行交换，确保对角线元素不为零
     int n = MNA_Y.rows();
-    for (int k = 0; k < n; ++k){
-        if (std::abs(MNA_Y(k, k)) < 1e-6){
-            //寻找所有行中绝对值最大的元素进行交换
-            int max_row = k;
-            for (int i = 0; i < n; ++i){
-                if (std::abs(MNA_Y(i, k)) > std::abs(MNA_Y(max_row, k))){
-                    max_row = i;
+    // for (int k = 0; k < n; ++k){
+    //     if (std::abs(MNA_Y(k, k)) < 1e-6){
+    //         //寻找所有行中绝对值最大的元素进行交换
+    //         int max_row = k;
+    //         for (int i = 0; i < n; ++i){
+    //             if (std::abs(MNA_Y(i, k)) > std::abs(MNA_Y(max_row, k))){
+    //                 max_row = i;
+    //             }
+    //         }
+    //         if (max_row != k){
+    //             MNA_Y.row(k).swap(MNA_Y.row(max_row));
+    //             std::swap(J(k), J(max_row));
+    //             // std::cout << "Swapping rows " << k << " and " << max_row << " to avoid zero diagonal\n";
+    //         }
+    //     }
+    // }
+
+    // //Debug:用LU分解法先得到解
+    // //使用Eigen的LU分解求解器
+    // Eigen::PartialPivLU<Eigen::MatrixXd> lu(MNA_Y);
+    
+    // //检查矩阵是否可逆
+    // if (lu.determinant() == 0.0) {
+    //     std::cout << "Warning: Matrix is singular or near-singular\n";
+    // }
+    
+    // //求解线性方程组 MNA_Y * x = J
+    // Eigen::VectorXd x = lu.solve(J);
+
+    // std::cout << "LU Decomposition Solution x:\n" << x << "\n";
+    // /////////////////////////////////////////////////////////////
+
+    // //使用对角占优化处理，增强收敛性
+    // Eigen::MatrixXd inversePerm = diagMax();
+    // //Debug: 输出MNA矩阵和J向量在主元交换后的形式
+    // std::cout << "MNA_Y Matrix before pivoting:\n" << MNA_Y << "\n";
+
+    //对于MNA(i,i)为零的情况，必然是电压源，寻找上方为1或者-1的行，哪个行对应的对角元小，与那行交换
+    for (int i = 0; i < n; ++i){
+        if (std::abs(MNA_Y(i, i)) < 1e-12){
+            //寻找上方为1或者-1的行
+            int row1 = -1;
+            int row2 = -1;
+            for (int j = 0; j < n; ++j){
+                if (j != i && (std::abs(MNA_Y(j, i) - 1.0) < 1e-12 || std::abs(MNA_Y(j, i) + 1.0) < 1e-12)){
+                    if (row1 == -1){
+                        row1 = j;
+                    } else {
+                        row2 = j;
+                        break;
+                    }
                 }
             }
-            if (max_row != k){
-                MNA_Y.row(k).swap(MNA_Y.row(max_row));
-                std::swap(J(k), J(max_row));
-                // std::cout << "Swapping rows " << k << " and " << max_row << " to avoid zero diagonal\n";
+            //选择对角元较小的行进行交换
+            int swap_row = -1;
+            if (row1 != -1 && row2 != -1){
+                if (std::abs(MNA_Y(row1, row1)) < std::abs(MNA_Y(row2, row2))){
+                    swap_row = row1;
+                } else {
+                    swap_row = row2;
+                }
+            } else if (row1 != -1){
+                swap_row = row1;
+            } else if (row2 != -1){
+                swap_row = row2;
+            }
+            if (swap_row != -1){
+                MNA_Y.row(i).swap(MNA_Y.row(swap_row));
+                std::swap(J(i), J(swap_row));
+                // std::cout << "Swapping rows " << i << " and " << swap_row << " to avoid zero diagonal\n";
             }
         }
     }
 
-    //使用对角占优化处理，增强收敛性
-    Eigen::MatrixXd inversePerm = diagMax();
 
+    // //Debug: 输出调整后的MNA矩阵和J向量
+    // std::cout << "Adjusted MNA_Y Matrix:\n" << MNA_Y << "\n";
+    // std::cout << "Adjusted J Vector:\n" << J << "\n";
 
-    //Debug: 输出调整后的MNA矩阵和J向量
-    std::cout << "Adjusted MNA_Y Matrix:\n" << MNA_Y << "\n";
-    std::cout << "Adjusted J Vector:\n" << J << "\n";
-
-    // std::cout << "Solving MNA equations using Gauss-Jacobi Iteration:\n";
-    // //展示特征值
-    Eigen::EigenSolver<Eigen::MatrixXd> es(MNA_Y);
-    // std::cout << "Eigenvalues of MNA_Y:\n" << es.eigenvalues() << "\n";
-    // //如果存在特征值绝对值大于1，则可能不收敛
-    for (int i = 0; i < es.eigenvalues().size(); ++i) {
-        if (std::abs(es.eigenvalues()(i)) > 1.0) {
-            std::cout << "Warning: Eigenvalue " << es.eigenvalues()(i) << " may indicate non-convergence\n";
-            break;
+    //构造迭代矩阵，判断收敛性
+    Eigen::MatrixXd D = MNA_Y.diagonal().asDiagonal();
+    Eigen::MatrixXd D_inv = D.inverse();
+    Eigen::MatrixXd L_plus_U = MNA_Y - D;
+    Eigen::MatrixXd iteration_matrix = -D_inv * L_plus_U;
+    // //Debug: 输出D矩阵和D的逆
+    // std::cout << "D Matrix:\n" << D << "\n";
+    // std::cout << "D Inverse Matrix:\n" << D_inv << "\n";
+    // //Debug: 输出L+U矩阵
+    // std::cout << "L + U Matrix:\n" << L_plus_U << "\n";
+    // //Debug: 输出迭代矩阵
+    // std::cout << "Iteration Matrix:\n" << iteration_matrix << "\n";
+    //计算特征值判断收敛性
+    Eigen::EigenSolver<Eigen::MatrixXd> iteration_es(iteration_matrix);
+    // std::cout << "Eigenvalues of iteration matrix:\n" << iteration_es.eigenvalues() << "\n";
+    double max_eigenvalue = 0.0;
+    for (int i = 0; i < iteration_es.eigenvalues().size();i++){
+        double abs_eigenvalue = std::abs(iteration_es.eigenvalues()(i));
+        if (abs_eigenvalue > max_eigenvalue){
+            max_eigenvalue = abs_eigenvalue;
         }
     }
+    if(max_eigenvalue >= 1.0){
+        std::cout << "Warning: Gauss-Jacobi iteration may not converge (max eigenvalue = " << max_eigenvalue << ")\n";
+    } else {
+        std::cout << "Gauss-Jacobi iteration expected to converge (max eigenvalue = " << max_eigenvalue << ")\n";
+    }
+
+    // // std::cout << "Solving MNA equations using Gauss-Jacobi Iteration:\n";
+    // // //展示特征值
+    // Eigen::EigenSolver<Eigen::MatrixXd> es(MNA_Y);
+    // // std::cout << "Eigenvalues of MNA_Y:\n" << es.eigenvalues() << "\n";
+    // // //如果存在特征值绝对值大于1，则可能不收敛
+    // for (int i = 0; i < es.eigenvalues().size(); ++i) {
+    //     if (std::abs(es.eigenvalues()(i)) > 1.0) {
+    //         std::cout << "Warning: Eigenvalue " << es.eigenvalues()(i) << " may indicate non-convergence\n";
+    //         break;
+    //     }
+    // }
 
     Eigen::VectorXd x_old = Eigen::VectorXd::Zero(n);
     Eigen::VectorXd x_new = Eigen::VectorXd::Zero(n);
-    const int max_iterations = 100;
+    const int max_iterations = 1000;
     const double tolerance = 1e-10;
     
     for (int iter = 0; iter < max_iterations; ++iter) {
-
-
 
         for (int i = 0; i < n; ++i) {
             double sum = J(i);
@@ -446,8 +565,8 @@ void solver::solve_linear_MNA_Gauss_Jacobi(){
             }
         }
         
-        //Debug: 输出每次迭代的结果
-        std::cout << "Iteration " << iter + 1 << ": x = " << x_new << "\n";
+        // //Debug: 输出每次迭代的结果
+        // std::cout << "Iteration " << iter + 1 << ": x = " << x_new << "\n";
 
         //检查收敛性
         double error = (x_new - x_old).norm();
@@ -462,13 +581,47 @@ void solver::solve_linear_MNA_Gauss_Jacobi(){
             std::cout << "Warning: Did not converge within the maximum number of iterations\n";
         }
     }
-    //交换回来
-    x_new = inversePerm * x_new;
+    // //交换回来
+    // x_new = inversePerm * x_new;
+    // 3. 恢复解的顺序
     
+    // //Debug: 输出最终解
+    // std::cout << "Gauss-Jacobi Solution x:\n" << x_new << "\n";
+    
+    // //存储节点电压结果
+    // node_voltages.resize(ckt.node_map.size() - 1);
+    // for (int i = 0; i < ckt.node_map.size() - 1; ++i){
+    //     node_voltages[i] = x_new(i);
+    // }
+    // //如果有额外的变量（如支路电流），也存储起来
+    // if (x_new.size() > ckt.node_map.size() - 1) {
+    //     branch_currents.resize(x_new.size() - (ckt.node_map.size() - 1));
+    //     for (int i = ckt.node_map.size() - 1; i < x_new.size(); ++i) {
+    //         branch_currents[i - (ckt.node_map.size() - 1)] = x_new(i);
+    //     }
+    // }
+   //////////////////////////////////////
     //存储节点电压结果
-    node_voltages.resize(ckt.node_map.size() - 1);
-    for (int i = 0; i < ckt.node_map.size() - 1; ++i){
+    node_voltages.resize(std::min((int)(ckt.node_map.size() - 1), (int)x_new.size()));
+    for (int i = 0; i < node_voltages.size(); ++i){
         node_voltages[i] = x_new(i);
+    }
+    // //Debug: 输出节点电压
+    // std::cout << "Node Voltages:\n";
+    // for (int i = 0; i < node_voltages.size(); ++i) {
+    //     std::cout << "V" << i+1 << ": " << node_voltages[i] << " V\n";
+    // }
+    
+    //如果有额外的变量（如支路电流），也存储起来
+    if (x_new.size() > ckt.node_map.size() - 1) {
+        branch_currents.resize(x_new.size() - (ckt.node_map.size() - 1));
+        for (int i = ckt.node_map.size() - 1; i < x_new.size(); ++i) {
+            branch_currents[i - (ckt.node_map.size() - 1)] = x_new(i);
+        }
+        // std::cout << "Branch Currents:\n";
+        // for (int i = 0; i < branch_currents.size(); ++i) {
+        //     std::cout << "I" << i << ": " << branch_currents[i] << " A\n";
+        // }
     }
 }
 
@@ -766,6 +919,7 @@ void solver::build_nonlinear_MNA() {
 void solver::build_sources_MNA(){
     //清空打印支路电流索引
     ckt.print_branch_current_indices.clear();
+    ckt.plot_branch_current_indices.clear();
     for (auto &dev : ckt.sources){
         char c = toupper(dev.name[0]);
         //独立电压源
@@ -786,6 +940,9 @@ void solver::build_sources_MNA(){
             //如果需要打印支路电流，存在ckt.print_branch_current_indices,需要减去节点数偏移
             if(dev.printI){
                 ckt.print_branch_current_indices.push_back(new_var_index - ((int)ckt.node_list.size() - 1));
+            }
+            if(dev.plotI){
+                ckt.plot_branch_current_indices.push_back(new_var_index - ((int)ckt.node_list.size() - 1));
             }
             // 如果是瞬态等效电压源，更新动态器件映射
             if (!dev.original_device_name.empty()) {
@@ -856,6 +1013,7 @@ void solver::build_sources_MNA(){
 void solver::build_sources_MNA(bool in_tran,double time){
     //清空打印支路电流索引
     ckt.print_branch_current_indices.clear();
+    ckt.plot_branch_current_indices.clear();
     for (auto &dev : ckt.sources){
         char c = toupper(dev.name[0]);
         //独立电压源
@@ -890,6 +1048,9 @@ void solver::build_sources_MNA(bool in_tran,double time){
             //如果需要打印支路电流，存在ckt.print_branch_current_indices,需要减去节点数偏移
             if(dev.printI){
                 ckt.print_branch_current_indices.push_back(new_var_index - ((int)ckt.node_list.size() - 1));
+            }
+            if(dev.plotI){
+                ckt.plot_branch_current_indices.push_back(new_var_index - ((int)ckt.node_list.size() - 1));
             }
             // 如果是瞬态等效电压源，更新动态器件映射
             if (!dev.original_device_name.empty()) {
@@ -1004,22 +1165,22 @@ void solver::DC_solve() {
         // 4. 电源 stamp
         build_sources_MNA();
 
-        // Debug: 输出当前迭代的 MNA 矩阵和 J 向量
-        std::cout << "Iteration " << iter + 1 << ":\n";
-        //输出节点序号与名称对照
-        for (const auto& pair : ckt.node_map) {
-            std::cout << "Node ID " << pair.second << ": " << pair.first << "\n";
-        }
-        std::cout << "MNA_Y:\n" << MNA_Y << "\n";
-        std::cout << "J:\n" << J << "\n";
+        // // Debug: 输出当前迭代的 MNA 矩阵和 J 向量
+        // std::cout << "Iteration " << iter + 1 << ":\n";
+        // //输出节点序号与名称对照
+        // for (const auto& pair : ckt.node_map) {
+        //     std::cout << "Node ID " << pair.second << ": " << pair.first << "\n";
+        // }
+        // std::cout << "MNA_Y:\n" << MNA_Y << "\n";
+        // std::cout << "J:\n" << J << "\n";
 
         // 5. 求解线性方程
         //保存旧节点电压用于收敛性检查
         Eigen::VectorXd old_node_voltages = node_voltages;
         solve_linear_MNA();
 
-        // Debug: 输出当前迭代的节点电压
-        std::cout << "Node Voltages:\n" << node_voltages << std::endl << std::endl; 
+        // // Debug: 输出当前迭代的节点电压
+        // std::cout << "Node Voltages:\n" << node_voltages << std::endl << std::endl; 
 
         // 6. 检查收敛性
         double max_diff = (node_voltages - old_node_voltages).cwiseAbs().maxCoeff();
@@ -1183,7 +1344,7 @@ void solver::DC_solve(const Eigen::VectorXd& initial_node_voltages, bool in_tran
 
         // // Debug: 输出当前迭代的 MNA 矩阵和 J 向量
         // std::cout << "Source " << iter + 1 << ":\n";
-        // std::cout << "MNA_Y:\n" << MNA_Y << "\n";
+        // std::cout << "Before_solve_MNA_Y:\n" << MNA_Y << "\n";
         // std::cout << "J:\n" << J << "\n";
 
 
@@ -1191,6 +1352,11 @@ void solver::DC_solve(const Eigen::VectorXd& initial_node_voltages, bool in_tran
         //保存旧节点电压用于收敛性检查
         Eigen::VectorXd old_node_voltages = node_voltages;
         solve_linear_MNA();
+
+        // //Debug: 输出当前迭代的解
+        // std::cout << "after_solve Node Voltages:\n" << node_voltages << std::endl;
+        // std::cout << "currents" << branch_currents << std::endl;
+
 
         // 6. 检查收敛性
         // double max_diff = (node_voltages - old_node_voltages).cwiseAbs().maxCoeff();
@@ -1401,6 +1567,9 @@ void solver::build_transient_ckt(double tstep){
                 I_eq = I_prev + (tstep / L) * (V1_prev - V2_prev);
             }
             else if(transient_method == TransientMethod::BACKWARD_EULER){
+                // //使用梯形法戴维南等效参数
+                // R_eq = L / tstep;
+                // V_eq = - L * I_prev / tstep;                
                 R_eq = L / tstep;
                 V_eq = 0;
                 I_eq = I_prev;
@@ -1420,6 +1589,7 @@ void solver::build_transient_ckt(double tstep){
             int mid_node_id = ckt.getNodeID(mid_node_name);
             
             // 创建等效电流源和与其并联电阻 (从n1到中间节点)
+            if(I_eq != 0.0){
             device equiv_current;
             equiv_current.name = "I" + dev.name + "_transient_I";
             equiv_current.type = "I";
@@ -1428,6 +1598,8 @@ void solver::build_transient_ckt(double tstep){
             equiv_current.parameters["DC"] = I_eq;
             equiv_current.original_device_name = dev.name; // 电感等效器件标识
             ckt.sources.push_back(equiv_current);
+            }
+
             // 创建等效电阻 (从n1到中间节点)
             if(R_eq > 0.0){
                 device equiv_resistor;
@@ -1484,6 +1656,7 @@ void solver::TRAN_solve(){
 
 
     int steps = static_cast<int>(tstop / tstep);
+    tran_plot_data.clear();
     for (int step = 0; step <= steps; ++step){
         double time = step * tstep;
         // std::cout << "Transient Analysis Time: " << time << " s\n";
@@ -1547,6 +1720,15 @@ void solver::TRAN_solve(){
             //输出调试信息
             //std::cout << "Plot Data - Time: " << time << " s, Node ID: " << plot_node_id << ", Voltage: " << v << " V\n";
         }
+        //记录需要画图的支路电流
+        for (auto plot_current_dev_index : ckt.plot_branch_current_indices){
+            if(plot_current_dev_index >=0 && plot_current_dev_index < ckt.sources.size()){
+                double i = branch_currents[plot_current_dev_index];
+                tran_plot_data[node_voltages.size() + plot_current_dev_index].push_back(std::make_pair(time, i));
+                //输出调试信息
+                //std::cout << "Plot Data - Time: " << time << " s, Branch Index: " << plot_current_dev_index << ", Current: " << i << " A\n";
+            }
+        }
 
         // 根据需要打印的变量，存到文件中
         {
@@ -1589,16 +1771,21 @@ void solver::TRAN_solve(){
 }
     
 //瞬态分析，参数可调节
-void solver::TRAN_solve(double tstop, double tstep){
+void solver::TRAN_solve(double tstop, double tstep,int use_initial_dc){
     //提取电容信息
     ckt.extract_MOS_capacitances();
     //确定需要打印的变量
     parse_print_variables();
 
     //先进行直流分析，获得初始条件
-    //DC_solve();
-    //零初值条件
-    node_voltages = Eigen::VectorXd::Zero(ckt.node_map.size() - 1);
+    if(use_initial_dc == 2){
+        DC_solve();
+    }
+    else{
+        //零初值条件
+        node_voltages = Eigen::VectorXd::Zero(ckt.node_map.size() - 1);
+    }
+    
 
     // //Debug展示初始节点电压结果
     // std::cout << "Initial Node Voltages for Transient Analysis:\n";
@@ -1675,6 +1862,16 @@ void solver::TRAN_solve(double tstop, double tstep){
             tran_plot_data[plot_node_id].push_back(std::make_pair(time, v));
             //输出调试信息
             //std::cout << "Plot Data - Time: " << time << " s, Node ID: " << plot_node_id << ", Voltage: " << v << " V\n";
+        }
+        //记录需要画图的支路电流
+        for (auto plot_current_dev_index : ckt.plot_branch_current_indices){
+            if(plot_current_dev_index >=0 && plot_current_dev_index < ckt.sources.size()){
+                double i = branch_currents[plot_current_dev_index];
+                tran_plot_data[-(plot_current_dev_index+1)].push_back(std::make_pair(time, i));
+                //输出调试信息
+                std::cout << "save current index" <<plot_current_dev_index+1 << "\n";
+                //std::cout << "Plot Data - Time: " << time << " s, Branch Index: " << plot_current_dev_index << ", Current: " << i << " A\n";
+            }
         }
 
         //根据需要打印的变量，存到文件中
@@ -1934,6 +2131,7 @@ Eigen::VectorXcd solver::hb_iDFT(Eigen::VectorXcd xw)
 
 //加入sources到MNA和J中
 void solver::hb_build_sources_MNA(){
+
     //确保hb_MNA_Y大小正确,此时hb_liner_Y已经构建完成
     hb_MNA_Y = hb_liner_Y;
     for (auto &dev : ckt.sources){
@@ -2242,22 +2440,6 @@ void solver::hb_build_nonlinear_MNA(){
                 //Debug:
                 // std::cout << "Time point " << t << ": Vd0=" << Vd0 << ", Vs0=" << Vs0 << ", Vgs=" << Vgs << ", Vds=" << Vds << ", Ids=" << Ids_time(t) << "\n";
             }
-            //对Ids_time进行DFT变换，得到频域分量
-            // Ids_time 是单一变量在 N 个时间点上的序列（长度 N），
-            // 此处直接用 hb_DFT_matrix（N x N）乘以序列，避免将长度为 N 的向量传入
-            // 期望长度为 base_size * N 的 hb_DFT 函数导致的越界。
-            // Eigen::VectorXcd Ids_freq = hb_DFT_matrix * Ids_time.cast<std::complex<double> >();
-            // //将Ids_freq加入到hb_MNA_Y和hb_J中
-            // for(int k = 0; k < (2 * hb_params.num_harmonics + 1); ++k){
-            //     int row_index;
-            //     //对漏极节点加入Ids_freq
-            //     row_index = (k) * base_size + nd - 1;
-            //     hb_J(row_index) -= Ids_freq(k);
-            //     //对源极节点加入-Ids_freq
-            //     row_index = (k) * base_size + ns - 1;
-            //     hb_J(row_index) += Ids_freq(k);
-            // }
-           
             
         }
         //  //Debug:
@@ -2285,8 +2467,55 @@ void solver::hb_build_nonlinear_MNA(){
         // //Debug:
         // std::cout << "Frequency point " << k - hb_params.num_harmonics << ": Current Contribution added to hb_J.\n";
     }
-    //线性元件对于频域雅可比矩阵的贡献
-    hb_jacobian = hb_T2F_matrix * t_jacobian * hb_F2T_matrix;
+
+    // //线性元件对于频域雅可比矩阵的贡献
+    // hb_jacobian = hb_T2F_matrix * t_jacobian * hb_F2T_matrix;
+
+    //分块来计算矩阵乘法
+    //分块法
+    // 变换与矩阵乘法（按块实现）用时开始
+    auto start_transform = std::chrono::high_resolution_clock::now();
+
+    // 说明：hb_T2F_matrix 和 hb_F2T_matrix 是由每个变量重复的 DFT/IDFT 小块构成。
+    // 可以对 t_jacobian 按变量对 (i,j) 提取 NxN 小块 B，计算 hb_DFT_matrix * B * hb_iDFT_matrix，
+    // 再把结果写回 hb_jacobian 的相应位置。这样复杂度从 O((base_size*N)^3) 降为 O(base_size^2 * N^3)。
+
+    int N = 2 * hb_params.num_harmonics + 1;
+    int total_size = base_size * N;
+    hb_jacobian = Eigen::MatrixXcd::Zero(total_size, total_size);
+
+    // 预分配临时矩阵以减少重复分配开销
+    Eigen::MatrixXcd block(N, N);
+    Eigen::MatrixXcd trans(N, N);
+
+    // 如果希望启用并行化，请在编译时加入 -fopenmp，并取消下面的注释（确保 Eigen 支持线程安全写入）
+    // #pragma omp parallel for collapse(2) private(block, trans)
+    for(int i = 0; i < base_size; ++i){
+        for(int j = 0; j < base_size; ++j){
+            // 提取 N x N 小块：block(k,n) = t_jacobian(i + k*base_size, j + n*base_size)
+            for(int k = 0; k < N; ++k){
+                for(int n = 0; n < N; ++n){
+                    block(k, n) = t_jacobian(i + k * base_size, j + n * base_size);
+                }
+            }
+
+            // 进行小块的频域变换
+            trans.noalias() = hb_DFT_matrix * block * hb_iDFT_matrix;
+
+            // 写回结果到 hb_jacobian
+            for(int k = 0; k < N; ++k){
+                for(int n = 0; n < N; ++n){
+                    hb_jacobian(i + k * base_size, j + n * base_size) = trans(k, n);
+                }
+            }
+        }
+    }
+
+    // 变换与矩阵乘法用时结束
+    auto end_transform = std::chrono::high_resolution_clock::now();
+    std::chrono::duration<double> transform_duration = end_transform - start_transform;
+    std::cout << "Time-Frequency Transform Time: " << transform_duration.count() << " seconds.\n";
+
 
     // //Debug: 输出时域雅可比矩阵
     // std::cout << "Time-Domain Jacobian Matrix (t_jacobian):\n" << t_jacobian << "\n";
@@ -2352,8 +2581,8 @@ void solver::PSS_solve_harmonic_balance(){
     hb_initialize_DFT_matrices();
     hb_build_TF_matrix();
 
-    //确定需要打印的节点
-    parse_print_variables();
+    // //确定需要打印的节点
+    // parse_print_variables();
     // 初始化频域解向量
     hb_xt = Eigen::VectorXcd::Zero(base_size * (2 * hb_params.num_harmonics + 1));
     hb_xt = hb_iDFT(hb_xw);
@@ -2511,9 +2740,9 @@ void solver::PSS_solve_harmonic_balance(){
                     hdr << "\tV(" << name << ")";
                 }
                 // //只需要遍历所有sources，按顺序输出支路电流表头
-                // for (const auto &d : ckt.sources){
-                //     if (d.printI) hdr << "\tI(" << d.name << ")";
-                // }
+                for (const auto &d : ckt.sources){
+                    if (d.printI) hdr << "\tI(" << d.name << ")";
+                }
                 //关闭
                 hdr << "\n";
                 hdr.close();
@@ -2531,12 +2760,12 @@ void solver::PSS_solve_harmonic_balance(){
                 for(int i = 0; i < (ckt.node_list.size() -1); ++i){
                     hb_node_voltages(i) = hb_xt(i + n * base_size).real();
                 }
-                //提取支路电流
-                // Eigen::VectorXd branch_currents(ckt.sources.size());
-                // for(int i = 0; i < ckt.sources.size(); ++i){
-                //     int branch_index = ckt.sources[i].branch_current_index + (ckt.node_list.size() -1);
-                //     branch_currents(i) = hb_xt(branch_index + n * base_size).real();
-                // }
+                //1215提取支路电流
+                Eigen::VectorXd branch_currents(ckt.sources.size());
+                for(int i = 0; i < ckt.sources.size(); ++i){
+                    int branch_index = ckt.sources[i].branch_current_index + (ckt.node_list.size() -1);
+                    branch_currents(i) = hb_xt(branch_index + n * base_size).real();
+                }
                 out << time;
                 for (int node_id : ckt.print_node_ids) {
                     double v = 0.0;
@@ -2545,11 +2774,13 @@ void solver::PSS_solve_harmonic_balance(){
                     out << "\t" << v;
                 }
                 out << "\n";
-            // for (int current_dev_index : ckt.print_branch_current_indices) {
-            //     if(current_dev_index >=0 && current_dev_index < ckt.sources.size()){
-            //         out << "\t" << branch_currents[current_dev_index];
-            //     }
-            // }
+
+            //1215 电流
+            for (int current_dev_index : ckt.print_branch_current_indices) {
+                if(current_dev_index >=0 && current_dev_index < ckt.sources.size()){
+                    out << "\t" << branch_currents[current_dev_index];
+                }
+            }
             }
 
             //打印频域结果
@@ -2589,19 +2820,26 @@ void solver::PSS_solve_harmonic_balance(analysis& analysis, int max_iters, doubl
     hb_params.tolerance = tol; // 收敛容限
     hb_params.relaxation_factor = relaxation_factor; // 松弛因子
     ckt.extract_MOS_capacitances(); //提取MOS管寄生电容
+        //确定需要打印的节点
+    parse_print_variables();
     HB_set_initial_xw({}); //空参数表示使用默认初始解
     PSS_solve_harmonic_balance();
     std::cout << "Harmonic Balance Analysis Completed.\n";
 }
 
 void solver::print_hb_time_domain_results(){
-    std::cout << "Time(s)";
-    for (int node_id : get_plot_node_ids()) {
+    //输出到文件中查看,把std::cout改为文件输出
+    std::ofstream out("hb_time_domain_results.txt");
+    out << "Time(s)";
+    for (int node_id : ckt.print_node_ids) {
         std::string name = "NODE";
         if (node_id >= 0 && node_id < (int)ckt.node_list.size()) name = ckt.node_list[node_id];
-        std::cout << "\tV(" << name << ")";
+        out << "\tV(" << name << ")";
     }
-    std::cout << "\n";
+    for(const auto &d : ckt.sources){
+        if (d.printI) out << "\tI(" << d.name << ")";
+    }
+    out << "\n";
 
     int N = 2 * hb_params.num_harmonics + 1;
     double T = 1.0 / (hb_params.fundamental_omega / (2.0 * M_PI)); //周期
@@ -2615,47 +2853,81 @@ void solver::print_hb_time_domain_results(){
             hb_node_voltages(i) = hb_xt(i + n * base_size).real();
         }
         //提取支路电流
-        // Eigen::VectorXd branch_currents(ckt.sources.size());
-        // for(int i = 0; i < ckt.sources.size(); ++i){
-        //     int branch_index = ckt.sources[i].branch_current_index + (ckt.node_list.size() -1);
-        //     branch_currents(i) = hb_xt(branch_index + n * base_size).real();
-        // }
-        std::cout << time;
-        for (int node_id : get_plot_node_ids()) {
+        Eigen::VectorXd branch_currents(ckt.sources.size());
+        for(int i = 0; i < ckt.sources.size(); ++i){
+            int branch_index = ckt.sources[i].branch_current_index + (ckt.node_list.size() -1);
+            branch_currents(i) = hb_xt(branch_index + n * base_size).real();
+        }
+        out << time;
+        for (int node_id : ckt.print_node_ids) {
             double v = 0.0;
             if (node_id == 0) v = 0.0;
             else if (node_id - 1 >= 0 && node_id - 1 < hb_node_voltages.size()) v = hb_node_voltages[node_id - 1];
-            std::cout << "\t" << v;
+            out << "\t" << v;
         }
-        std::cout << "\n";
+        //打印支路电流
+        for (int current_dev_index : ckt.print_branch_current_indices) {
+            // std::cout << current_dev_index << "\n";
+            if(current_dev_index >=0 && current_dev_index < ckt.sources.size()){
+                out << "\t" << branch_currents[current_dev_index];
+            }
+        }
+        out << "\n";
     }
+    out.close();
 }
 
 void solver::print_hb_frequency_domain_results(){
-    //打印频域结果
+    //打印频域结果到文件中
     int N = 2 * hb_params.num_harmonics + 1;
-    std::cout << "\nFrequency Domain Results:\n";
-    std::cout << "Harmonic\tFrequency(Hz)";
-    for (int node_id : get_plot_node_ids()) {
+    std::ofstream out("hb_frequency_domain_results.txt");
+    out << "\nFrequency Domain Results:\n";
+    out << "Harmonic\tFrequency(Hz)";
+    for (int node_id : ckt.print_node_ids) {
         std::string name = "NODE";
         if (node_id >= 0 && node_id < (int)ckt.node_list.size()) name = ckt.node_list[node_id];
-        std::cout << "\tV(" << name << ")";
+        out << "\tV(" << name << ")";
     }
-    std::cout << "\n";
+    for(const auto &d : ckt.sources){
+        if (d.printI) out << "\tI(" << d.name << ")";
+    }
+    out << "\n";
     for (int h = 0; h < N; ++h) {
-        Eigen::VectorXcd hb_node_vw(ckt.node_list.size() -1);
-        for(int i = 0; i < (ckt.node_list.size() -1); ++i){
+        Eigen::VectorXcd hb_node_vw(base_size);
+        for(int i = 0; i < base_size; ++i){
             hb_node_vw(i) = hb_xw(i + h * base_size);
         }
-        std::cout << h - hb_params.num_harmonics << "\t" << ((h - hb_params.num_harmonics) * (hb_params.fundamental_omega / (2.0 * M_PI)));
-        for (int node_id : get_plot_node_ids()) {
+        //提取支路电流
+        Eigen::VectorXcd branch_currents_w(ckt.sources.size());
+        for(int i = 0; i < ckt.sources.size(); ++i){
+            int branch_index = ckt.sources[i].branch_current_index + (ckt.node_list.size() -1);
+            branch_currents_w(i) = hb_xw(branch_index + h * base_size);
+        }
+        out << h - hb_params.num_harmonics << "\t" << ((h - hb_params.num_harmonics) * (hb_params.fundamental_omega / (2.0 * M_PI)));
+        for (int node_id : ckt.print_node_ids) {
             std::complex<double> v = 0.0;
             if (node_id == 0) v = 0.0;
             else if (node_id - 1 >= 0 && node_id - 1 < hb_node_vw.size()) v = hb_node_vw[node_id - 1];
-            std::cout << "\t" << v;
+            out << "\t" << v;
         }
-        std::cout << "\n";
+        // //打印支路电流
+        // for (int current_dev_index : ckt.print_branch_current_indices) {
+        //     if(current_dev_index >=0 && current_dev_index < ckt.sources.size()){
+        //         std::complex<double> i = hb_node_vw[current_dev_index + (ckt.node_list.size() -1)];
+        //         out << "\t" << i;
+        //     }
+        // }
+        //打印支路电流
+        for (int current_dev_index : ckt.print_branch_current_indices) {
+            // //Debug:
+            // std::cout << current_dev_index << "\n";
+            if(current_dev_index >=0 && current_dev_index < ckt.sources.size()){
+                out << "\t" << branch_currents_w[current_dev_index];
+            }
+        }
+        out << "\n";
     }
+    out.close();
 }
 
 void solver::plot_hb_time_domain_results() {
@@ -3045,3 +3317,5 @@ void solver::PSS_solve_shooting(double period_T, double tstep, int max_iters, do
     //     }
     // }
 }
+
+

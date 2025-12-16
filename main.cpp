@@ -59,8 +59,8 @@ int main(int argc, char* argv[]){
             }
         }
         else if (analysis.type == "TRAN"){
-            double tstep = analysis.parameters.count("step") ? analysis.parameters["step"] : 1e-9;
-            double tstop = analysis.parameters.count("stop") ? analysis.parameters["stop"] : 1e-6;
+            double tstep = analysis.parameters.count("tstep") ? analysis.parameters["tstep"] : 1e-9;
+            double tstop = analysis.parameters.count("tstop") ? analysis.parameters["tstop"] : 1e-6;
             //选择瞬态分析方法
             cout << "Select Transient analysis method:\n";
             cout << "1. Forward Euler\n";
@@ -82,36 +82,120 @@ int main(int argc, char* argv[]){
                     cout << "Invalid choice, using Trapezoidal method by default.\n";
                     sol.setTransientMethod(TransientMethod::TRAPEZOIDAL);
             }
-            sol.TRAN_solve(tstop, tstep);
+
+            //选择零初值还是直流点作为初值
+            cout << "Select initial condition for Transient analysis:\n";
+            cout << "1. Zero Initial Condition\n";
+            cout << "2. DC Operating Point\n";
+            int ic_choice;
+            cin >> ic_choice;
+            //询问DC分析方法
+            cout << "Select DC analysis method:\n";
+            cout << "1. Gauss Elimination\n";
+            cout << "2. LU Decomposition\n";
+            cout << "3. Manual LU\n";
+            cout << "4. Gauss-Jacobi Iteration\n";
+            int method_choice;
+            cin >> method_choice;
+            switch (method_choice){
+                case 1:
+                    sol.setLinearSolverMethod(LinearSolverMethod::GAUSS_ELIMINATION);
+                    break;
+                case 2:
+                    sol.setLinearSolverMethod(LinearSolverMethod::LU_DECOMPOSITION);
+                    break;
+                case 3:
+                    sol.setLinearSolverMethod(LinearSolverMethod::MANUAL_LU);
+                    break;
+                case 4:
+                    sol.setLinearSolverMethod(LinearSolverMethod::GAUSS_JACOBI);
+                    break;
+                default:
+                    cout << "Invalid choice, using LU Decomposition by default.\n";
+                    sol.setLinearSolverMethod(LinearSolverMethod::LU_DECOMPOSITION);
+            }
+
+            sol.TRAN_solve(tstop, tstep,ic_choice);
             //sol.TRAN_solve();
             cout << "Transient analysis completed.\n";
-            //打印要观察的节点电压时间序列
-            for (const auto& tran_plot_pair : sol.get_tran_plot_data()){
-                int node_id = tran_plot_pair.first;
-                const auto& time_voltage_series = tran_plot_pair.second;
-                cout << "Transient data for Node ID " << node_id << ":\n";
-                for (const auto& tv : time_voltage_series){
-                    cout << "Time: " << tv.first << " s, Voltage: " << tv.second << " V\n";
-                }
-            }
-            //绘制要观察的节点电压波形，要求画在一个窗口里，并且坐标轴独立
-            plt::figure();
+            // //打印要观察的节点电压时间序列
+            // for (const auto& tran_plot_pair : sol.get_tran_plot_data()){
+            //     int node_id = tran_plot_pair.first;
+            //     const auto& time_voltage_series = tran_plot_pair.second;
+            //     cout << "Transient data for Node ID " << node_id << ":\n";
+            //     for (const auto& tv : time_voltage_series){
+            //         cout << "Time: " << tv.first << " s, Voltage: " << tv.second << " V\n";
+            //     }
+            // }
+
+            // 12.14 绘制要观察的节点电压波形和支路电流波形，要求画在一个窗口里，电流电压坐标轴独立
+            plt::figure(1);
             for (const auto& tran_plot_pair : sol.get_tran_plot_data()){ 
                 int node_id = tran_plot_pair.first; 
                 const auto& time_voltage_series = tran_plot_pair.second; 
-                vector<double> times, voltages; 
+                vector<double> times, values; 
                 for (const auto& tv : time_voltage_series){ 
                     times.push_back(tv.first); 
-                    voltages.push_back(tv.second); 
+                    values.push_back(tv.second); 
                 } 
-                plt::plot(times, voltages, {{"label", "Node " + to_string(node_id) + "(" + ckt.node_list[node_id] + ")"}}); 
+                if (node_id >= 0 && node_id < (int)ckt.node_list.size()){
+                    plt::plot(times, values, {{"label", "Node " + to_string(node_id) + "(" + ckt.node_list[node_id] + ") Voltage"}}); 
+                }
+                else {
+                    continue;
+                }
             } 
             plt::legend(); 
             plt::xlabel("Time (s)"); 
-            plt::ylabel("Voltage (V)"); 
+            plt::ylabel("Value (V)"); 
             plt::title("Transient Analysis Node Voltages"); 
             plt::grid(true); 
             plt::show();
+
+            plt::figure(2);
+            for (const auto& tran_plot_pair : sol.get_tran_plot_data()){ 
+                int node_id = tran_plot_pair.first; 
+                const auto& time_voltage_series = tran_plot_pair.second; 
+                vector<double> times, values; 
+                for (const auto& tv : time_voltage_series){ 
+                    times.push_back(tv.first); 
+                    values.push_back(tv.second); 
+                } 
+                if (node_id >= 0 && node_id < (int)ckt.node_list.size()){
+                    continue;
+                }
+                else {
+                    std::cout << "Plotting current for branch current index: " << -node_id << ckt.sources[-node_id-1].name << "\n";
+                    plt::plot(times, values, {{"label", "I(" + ckt.sources[-node_id-1].name + ") "}}); 
+                }
+            } 
+            plt::legend(); 
+            plt::xlabel("Time (s)"); 
+            plt::ylabel("Current (A)"); 
+            plt::title("Transient Analysis Branch Currents"); 
+            plt::grid(true); 
+            plt::show();
+
+
+
+            // //绘制要观察的节点电压波形，要求画在一个窗口里，并且坐标轴独立
+            // plt::figure();
+            // for (const auto& tran_plot_pair : sol.get_tran_plot_data()){ 
+            //     int node_id = tran_plot_pair.first; 
+            //     const auto& time_voltage_series = tran_plot_pair.second; 
+            //     vector<double> times, voltages; 
+            //     for (const auto& tv : time_voltage_series){ 
+            //         times.push_back(tv.first); 
+            //         voltages.push_back(tv.second); 
+            //     } 
+            //     plt::plot(times, voltages, {{"label", "Node " + to_string(node_id) + "(" + ckt.node_list[node_id] + ")"}}); 
+            // } 
+            // plt::legend(); 
+            // plt::xlabel("Time (s)"); 
+            // plt::ylabel("Voltage (V)"); 
+            // plt::title("Transient Analysis Node Voltages"); 
+            // plt::grid(true); 
+            // plt::show();
         }
         else if (analysis.type == "HB"){
             double freq = analysis.parameters.count("freq") ? analysis.parameters["freq"] : 1e3;
@@ -164,7 +248,33 @@ int main(int argc, char* argv[]){
             plt::grid(true);
             plt::show();
 
+            // 创建电流图
+            plt::figure();
+
+            for (int node_id : sol.get_plot_current_ids()) {
+                std::string name = "NODE";
+                if (node_id >= 0 && node_id < (int)ckt.sources.size())
+                    name = ckt.sources[node_id].name;
+                // 提取节点电流
+                std::vector<double> currents;
+                for (int n = 0; n < N; ++n) {
+                    int branch_index = node_id + (ckt.node_list.size()-1);
+                    currents.push_back(sol.hb_xt(branch_index + n * sol.base_size).real());
+                    //std::cout << time_points[n] << "\t" << currents[n] << "\n";
+                }
+                // 绘制节点电流波形
+                plt::plot(time_points, currents, {{"label", "I(" + name + ")"}});
+                //std::cout << "Plotted Node " << name << " voltage.\n";
+            }
+            plt::legend();
+            plt::title("HB Time-Domain Node Currents");
+            plt::xlabel("Time (s)");
+            plt::ylabel("Current (A)");
+            plt::grid(true);
+            plt::show();
+
             std::cout << "Plotted HB time-domain voltages for all nodes.\n";
+
         }
         else if (analysis.type == "SHOOTING"){
             double freq;
