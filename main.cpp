@@ -296,9 +296,16 @@ int main(int argc, char* argv[]){
                     continue;
                 }
             }
+
+            //输入采样点数
+            cout << "Enter number of samples for SHOOTING analysis (e.g., 1000): ";
+            double N_sample;
+            cin >> N_sample;
+
             double period_T = 1.0 / freq;
-            double tstep = period_T / 1000.0; //默认时间步长为周期的1/1000
+            double tstep = period_T / N_sample; //默认时间步长为周期的1/1000
             sol.PSS_solve_shooting(period_T, tstep);
+            //sol.PSS_solve_shooting_exact_jacobian(period_T, tstep);
 
             // // Debug: 输出要plot的节点ID
             // cout << "Nodes to plot:\n";
@@ -336,7 +343,7 @@ int main(int argc, char* argv[]){
             plt::legend(); 
             plt::xlabel("Time (s)"); 
             plt::ylabel("Value (V)"); 
-            plt::title("Transient Analysis Node Voltages"); 
+            plt::title("Shooting Analysis Node Voltages"); 
             plt::grid(true); 
             plt::show();
 
@@ -360,7 +367,7 @@ int main(int argc, char* argv[]){
             plt::legend(); 
             plt::xlabel("Time (s)"); 
             plt::ylabel("Current (A)"); 
-            plt::title("Transient Analysis Branch Currents"); 
+            plt::title("Shooting Analysis Branch Currents"); 
             plt::grid(true); 
             plt::show();
 

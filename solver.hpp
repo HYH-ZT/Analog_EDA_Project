@@ -175,8 +175,9 @@ class solver {
         //设置HB初始频域解
         void HB_set_initial_xw(const std::map<std::string, double>& node_voltage_map);
         void PSS_solve();
-        Eigen::VectorXd run_transient_once(double T, double tstep, const Eigen::VectorXd &init_x);
+        std::pair<Eigen::VectorXd, Eigen::VectorXd> run_transient_once(double T, double tstep, const Eigen::VectorXd& init_V, const Eigen::VectorXd& init_I);
         void PSS_solve_shooting(double period_T, double tstep, int max_iters = 200, double tol = 1e-6);
+        void PSS_solve_shooting_exact_jacobian(double period_T, double tstep, int max_iters = 200, double tol = 1e-6);
         void PSS_solve_harmonic_balance();
         void PSS_solve_harmonic_balance(analysis& analysis, int max_iters = 50, double tol = 1e-6, double relaxation = 1.0);
         void print_hb_time_domain_results();
