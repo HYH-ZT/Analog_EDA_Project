@@ -22,9 +22,9 @@ C3 118 0 1e-12
 
 .shooting 10e6
 *.hb 10e6 100
-*.tran 1e-11 2e-7
-.PLOTNV 101
+*.tran 5e-10 5e-7
+*.PLOTNV 101
 *.PLOTNV 118
 .PLOTNV 107
 .PLOTNV I(VDD)
-.print tran V(101) V(118) V(107)
+*.print tran V(101) V(118) V(107)

@@ -106,4 +106,45 @@ void circuit::extract_MOS_capacitances() {
     linear_devices.insert(linear_devices.end(), new_linear_devices.begin(), new_linear_devices.end());
 }
 
+//===========================================
+//shooting method专用变量与函数
+//===========================================
+int circuit::allocate_internal_node() {
+    std::string internal_node_name = "_internal_" + std::to_string(node_list.size());
+    int internal_node_id = getNodeID(internal_node_name);
+    return internal_node_id;
+}
 
+void circuit::add_resistor(int n1, int n2, double value) {
+    device res_dev;
+    res_dev.name = "R_internal_" + std::to_string(linear_devices.size());
+    res_dev.type = "R";
+    res_dev.node_names = {node_list[n1], node_list[n2]};
+    res_dev.nodes = {n1, n2};
+    res_dev.parameters["value"] = value;
+    linear_devices.push_back(res_dev);
+}
+
+int circuit::add_voltage_source(int n1, int n2, double value) {
+    device vsc_dev;
+    vsc_dev.name = "V_internal_" + std::to_string(sources.size());
+    vsc_dev.type = "V";
+    vsc_dev.node_names = {node_list[n1], node_list[n2]};
+    vsc_dev.nodes = {n1, n2};
+    vsc_dev.parameters["DC"] = value;
+    vsc_dev.original_device_name = ""; //不是动态等效器件
+    sources.push_back(vsc_dev);
+    return sources.size() - 1; //返回该电压源在sources列表中的索引
+}
+
+int circuit::add_current_source(int n1, int n2, double value) {
+    device isc_dev;
+    isc_dev.name = "I_internal_" + std::to_string(sources.size());
+    isc_dev.type = "I";
+    isc_dev.node_names = {node_list[n1], node_list[n2]};
+    isc_dev.nodes = {n1, n2};
+    isc_dev.parameters["DC"] = value;
+    isc_dev.original_device_name = ""; //不是动态等效器件
+    sources.push_back(isc_dev);
+    return sources.size() - 1; //返回该电流源在sources列表中的索引
+}

@@ -129,6 +129,15 @@ class solver {
         void hb_build_TF_matrix();
 
 
+        //===========================================
+        //shooting method专用变量与函数
+        //===========================================
+        std::vector<CapacitorState> cap_states;
+        std::vector<CapacitorSkeleton> cap_skeletons;
+
+        std::vector<InductorState> ind_states;
+        std::vector<InductorSkeleton> ind_skeletons;
+
     public:
         Eigen::VectorXcd hb_xt;
         int base_size; //基频点矩阵大小
@@ -205,6 +214,34 @@ class solver {
     int checkDiagonalDominance(double threshold = 1e-6) const ;
 
 
+    //============================================
+    //shooting method专用函数
+    //============================================
+    void PSS_solve_shooting_new_new(double T, double tstep, int max_it = 100, double tol = 1e-8);
+    void compute_shooting_jacobian(const Eigen::VectorXd& X0, Eigen::MatrixXd& J, double period_T, double tstep);
+    void TRAN_solve_for_shooting(double tstop, double tstep);
+    void transient_step(double time);
 
+    void init_skeleton(double tstep);
+    void init_transient();
+
+    void update_capacitor_rhs();
+    void update_capacitor_state();
+
+    void update_inductor_rhs();
+    void update_inductor_state();
+
+    void reset_dynamic_state();
+    void set_state_from_x0(const Eigen::VectorXd& x0);
+
+    void TRAN_solve_new_new(double tstop, double tstep);    //测试瞬态
+    void DC_solve_new(double time);
+    void build_MNA_tran(double time);
+
+    void stamp_linear_devices();
+    void stamp_nonlinear_devices();
+    void stamp_independent_sources(double time);
+
+    Eigen::VectorXd propagate_one_period(const Eigen::VectorXd& x0, double T, double tstep);
+    void run_transient_and_record(double T, double tstep, const Eigen::VectorXd& x0_star);
 };
-

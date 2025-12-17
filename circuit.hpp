@@ -58,4 +58,45 @@ struct circuit
     const model* findModelConst(const std::string& modelName);
     //提取MOS管的寄生电容，转换为线性电容器件，加入linear_devices列表
     void extract_MOS_capacitances();
+
+    //===========================================
+    //shooting method专用变量与函数
+    //===========================================
+    int allocate_internal_node();
+    void add_resistor(int n1, int n2, double value);
+    int add_voltage_source(int n1, int n2, double value);
+    int add_current_source(int n1, int n2, double value);
+};
+
+
+//==========================================
+// 专用于shooting method的电路结构
+//==========================================
+
+//电容状态结构体
+struct CapacitorState {
+    double v_prev = 0.0;   // 上一步电容电压
+    double i_prev = 0.0;   // 上一步电容电流（可选，但建议保留）
+};
+
+//电容骨架结构体
+struct CapacitorSkeleton {
+    int n1, n2;        // 连接的两个节点
+    int mid;           // 内部节点编号
+    double Req;        // 固定等效电阻
+    int veq_index;     // 在 sources 中的 index
+};
+
+//电感状态结构体
+struct InductorState {
+    double i_prev;     // 上一步电感电流
+    double v_prev;     // 上一步电感电压（梯形法需要）
+};
+
+//电感骨架结构体
+struct InductorSkeleton {
+    int n1, n2;        // 原始端点
+    double L;
+    double Req;        // 2L / dt
+    int ieq_index;     // 等效电流源索引
 };
