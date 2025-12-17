@@ -19,7 +19,7 @@ namespace plt = matplotlibcpp;
 #include <unordered_map>
 
 
-int main(){
+int main_new_shooting_test(){
     string netlist_file;
     cin >> netlist_file;
     circuit ckt;
