@@ -3878,9 +3878,13 @@ void solver::PSS_solve_shooting_new_new(double T, double tstep, int max_it, doub
     const int N = m + n;
 
     // 初猜：可以先用 init_transient() 得到的状态，而不是全零
-    Eigen::VectorXd x0 = Eigen::VectorXd::Zero(N);
-    for (int k = 0; k < m; ++k) x0[k] = cap_states[k].v_prev;
-    for (int k = 0; k < n; ++k) x0[m + k] = ind_states[k].i_prev;
+    // Eigen::VectorXd x0 = Eigen::VectorXd::Zero(N);
+    // for (int k = 0; k < m; ++k) x0[k] = cap_states[k].v_prev;
+    // for (int k = 0; k < n; ++k) x0[m + k] = ind_states[k].i_prev;
+
+    int N_pre_cycles = 10;
+    Eigen::VectorXd x0 = compute_x0_by_prerun_TR(T, tstep, N_pre_cycles);
+
 
     // ===== C) Newton 外层 =====
     const double eps = 1e-6;
@@ -4208,3 +4212,76 @@ Eigen::VectorXd solver::propagate_one_period(const Eigen::VectorXd& x0, double T
     return xT;
 }
 
+Eigen::VectorXd solver::compute_x0_by_prerun_TR(double T, double tstep, int N_pre_cycles)
+{
+    const int m = (int)cap_states.size();
+    const int n = (int)ind_states.size();
+    const int N = m + n;
+
+    Eigen::VectorXd x0 = Eigen::VectorXd::Zero(N);
+
+    // ---- 安全检查 ----
+    if (N == 0) {
+        std::cerr << "[pre-run] No dynamic states (no C/L). x0 is empty.\n";
+        return x0;
+    }
+    if (tstep <= 0 || T <= 0) {
+        std::cerr << "[pre-run] invalid T/tstep.\n";
+        return x0;
+    }
+    if (N_pre_cycles <= 0) N_pre_cycles = 1;
+
+    // 每周期步数（尽量整数步）
+    int steps_per_cycle = (int)std::round(T / tstep);
+    if (steps_per_cycle < 1) steps_per_cycle = 1;
+
+    // ======================================================
+    // A) 复位数值状态（不要重复 init_skeleton！）
+    // ======================================================
+    // 复位动态器件内部状态 & RHS 源
+    reset_dynamic_state();
+
+    // 复位节点/支路未知量
+    const int node_count = (int)ckt.node_list.size() - 1;
+    node_voltages = Eigen::VectorXd::Zero(node_count);
+    branch_currents.resize(0);
+
+    // ======================================================
+    // B) 做一次 t=0 的 DC（用当前 RHS：此时 RHS=0）
+    //    然后 init_transient() 用 DC 解初始化状态
+    // ======================================================
+    update_capacitor_rhs();
+    update_inductor_rhs();
+
+    DC_solve_new(0.0);
+    init_transient();
+
+    // ======================================================
+    // C) 预跑 N 个周期（梯形法 transient_step）
+    // ======================================================
+    const int total_steps = N_pre_cycles * steps_per_cycle;
+    double t = 0.0;
+    for (int s = 1; s <= total_steps; ++s) {
+        t = s * tstep;
+        transient_step(t);
+
+        // 可选：每跑完一个周期打印一下状态范数，方便观察是否趋于周期稳态
+        if (s % steps_per_cycle == 0) {
+            double cap_norm = 0.0, ind_norm = 0.0;
+            for (auto& cs : cap_states) cap_norm += cs.v_prev * cs.v_prev;
+            for (auto& is : ind_states) ind_norm += is.i_prev * is.i_prev;
+            std::cerr << "[pre-run] cycle=" << (s / steps_per_cycle)
+                      << " cap_rms=" << std::sqrt(cap_norm / std::max(1, m))
+                      << " ind_rms=" << std::sqrt(ind_norm / std::max(1, n))
+                      << "\n";
+        }
+    }
+
+    // ======================================================
+    // D) 打包末端状态为 x0
+    // ======================================================
+    for (int k = 0; k < m; ++k) x0[k] = cap_states[k].v_prev;
+    for (int k = 0; k < n; ++k) x0[m + k] = ind_states[k].i_prev;
+
+    return x0;
+}

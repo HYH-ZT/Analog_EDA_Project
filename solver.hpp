@@ -244,4 +244,6 @@ class solver {
 
     Eigen::VectorXd propagate_one_period(const Eigen::VectorXd& x0, double T, double tstep);
     void run_transient_and_record(double T, double tstep, const Eigen::VectorXd& x0_star);
+
+    Eigen::VectorXd compute_x0_by_prerun_TR(double T, double tstep, int N_pre_cycles);
 };
