@@ -138,6 +138,14 @@ class solver {
         std::vector<InductorState> ind_states;
         std::vector<InductorSkeleton> ind_skeletons;
 
+        // Backward-Euler shooting dedicated storage (kept separate from TR skeleton/state)
+        bool be_skeleton_initialized = false;
+        double be_skeleton_tstep = 0.0;
+        std::vector<CapacitorState> cap_states_BE;
+        std::vector<CapacitorSkeleton> cap_skeletons_BE;
+        std::vector<InductorState> ind_states_BE;
+        std::vector<InductorSkeleton> ind_skeletons_BE;
+
     public:
         Eigen::VectorXcd hb_xt;
         int base_size; //基频点矩阵大小
@@ -218,6 +226,8 @@ class solver {
     //shooting method专用函数
     //============================================
     void PSS_solve_shooting_new_new(double T, double tstep, int max_it = 100, double tol = 1e-8);
+    void PSS_solve_shooting_backward_euler(double T, double tstep, int max_it = 100, double tol = 1e-8);
+    void PSS_solve_shooting_backward_euler_sensitivity(double T, double tstep, int max_it = 100, double tol = 1e-8);
     void compute_shooting_jacobian(const Eigen::VectorXd& X0, Eigen::MatrixXd& J, double period_T, double tstep);
     void TRAN_solve_for_shooting(double tstop, double tstep);
     void transient_step(double time);
@@ -246,4 +256,22 @@ class solver {
     void run_transient_and_record(double T, double tstep, const Eigen::VectorXd& x0_star);
 
     Eigen::VectorXd compute_x0_by_prerun_TR(double T, double tstep, int N_pre_cycles);
+
+    // Backward-Euler shooting (fast skeleton version)
+    void init_skeleton_BE(double tstep);
+    void init_transient_BE();
+    void transient_step_BE(double time);
+
+    void update_capacitor_rhs_BE();
+    void update_capacitor_state_BE();
+
+    void update_inductor_rhs_BE();
+    void update_inductor_state_BE();
+
+    void reset_dynamic_state_BE();
+    void set_state_from_x0_BE(const Eigen::VectorXd& x0);
+
+    Eigen::VectorXd propagate_one_period_BE(const Eigen::VectorXd& x0, double T, double tstep);
+    void run_transient_and_record_BE(double T, double tstep, const Eigen::VectorXd& x0_star);
+    Eigen::VectorXd compute_x0_by_prerun_BE(double T, double tstep, int N_pre_cycles);
 };

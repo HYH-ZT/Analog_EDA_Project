@@ -4285,3 +4285,353 @@ Eigen::VectorXd solver::compute_x0_by_prerun_TR(double T, double tstep, int N_pr
 
     return x0;
 }
+
+// ======================================================
+// Backward Euler: fast skeleton-based shooting method
+// - Capacitor: equivalent voltage source (series with Req)
+// - Inductor : equivalent current source (parallel with Req)
+// ======================================================
+
+void solver::init_skeleton_BE(double tstep)
+{
+    if (be_skeleton_initialized) {
+        if (be_skeleton_tstep == tstep) return;
+        std::cerr << "[BE] WARNING: init_skeleton_BE called again with different tstep; ignoring.\n";
+        return;
+    }
+
+    be_skeleton_initialized = true;
+    be_skeleton_tstep = tstep;
+
+    cap_states_BE.clear();
+    cap_skeletons_BE.clear();
+    ind_states_BE.clear();
+    ind_skeletons_BE.clear();
+
+    ckt.extract_MOS_capacitances();
+
+    const std::vector<device> devices = ckt.linear_devices;
+    cap_states_BE.reserve(devices.size());
+    cap_skeletons_BE.reserve(devices.size());
+    ind_states_BE.reserve(devices.size());
+    ind_skeletons_BE.reserve(devices.size());
+
+    for (const auto& dev : devices) {
+        if (dev.type == "C") {
+            auto itv = dev.parameters.find("value");
+            if (itv == dev.parameters.end()) continue;
+            double C = itv->second;
+            if (C <= 0.0 || tstep <= 0.0) continue;
+
+            CapacitorState st;
+            st.v_prev = 0.0;
+            st.i_prev = 0.0;
+            cap_states_BE.push_back(st);
+
+            CapacitorSkeleton sk;
+            sk.n1 = dev.nodes[0];
+            sk.n2 = dev.nodes[1];
+            sk.mid = ckt.allocate_internal_node();
+            sk.Req = tstep / C; // BE: Req = dt/C
+
+            ckt.add_resistor(sk.n1, sk.mid, sk.Req);
+            sk.veq_index = ckt.add_voltage_source(sk.mid, sk.n2, 0.0);
+
+            cap_skeletons_BE.push_back(sk);
+        } else if (dev.type == "L") {
+            auto itv = dev.parameters.find("value");
+            if (itv == dev.parameters.end()) continue;
+            double L = itv->second;
+            if (L <= 0.0 || tstep <= 0.0) continue;
+
+            InductorSkeleton sk;
+            sk.n1 = dev.nodes[0];
+            sk.n2 = dev.nodes[1];
+            sk.L = L;
+            sk.Req = L / tstep; // BE: Req = L/dt, Norton: Ieq=i_prev, G=dt/L
+
+            ckt.add_resistor(sk.n1, sk.n2, sk.Req);
+            sk.ieq_index = ckt.add_current_source(sk.n1, sk.n2, 0.0);
+            ind_skeletons_BE.push_back(sk);
+
+            InductorState st;
+            st.i_prev = 0.0;
+            st.v_prev = 0.0;
+            ind_states_BE.push_back(st);
+        }
+    }
+}
+
+void solver::update_capacitor_rhs_BE()
+{
+    const size_t K = cap_skeletons_BE.size();
+    for (size_t k = 0; k < K; ++k) {
+        const auto& sk = cap_skeletons_BE[k];
+        const auto& st = cap_states_BE[k];
+        ckt.sources[sk.veq_index].parameters["DC"] = st.v_prev;
+    }
+}
+
+void solver::update_capacitor_state_BE()
+{
+    const int nv = (int)node_voltages.size();
+    const size_t K = cap_skeletons_BE.size();
+
+    for (size_t k = 0; k < K; ++k) {
+        auto& sk = cap_skeletons_BE[k];
+        auto& st = cap_states_BE[k];
+
+        double v1 = (sk.n1 == 0) ? 0.0 : ((sk.n1 - 1 < nv) ? node_voltages[sk.n1 - 1] : 0.0);
+        double v2 = (sk.n2 == 0) ? 0.0 : ((sk.n2 - 1 < nv) ? node_voltages[sk.n2 - 1] : 0.0);
+        double vm = (sk.mid == 0) ? 0.0 : ((sk.mid - 1 < nv) ? node_voltages[sk.mid - 1] : 0.0);
+
+        double iC = (sk.Req != 0.0) ? (v1 - vm) / sk.Req : 0.0;
+        double vC = v1 - v2;
+
+        st.i_prev = iC;
+        st.v_prev = vC;
+    }
+}
+
+void solver::update_inductor_rhs_BE()
+{
+    const size_t K = ind_skeletons_BE.size();
+    for (size_t k = 0; k < K; ++k) {
+        const auto& sk = ind_skeletons_BE[k];
+        const auto& st = ind_states_BE[k];
+        ckt.sources[sk.ieq_index].parameters["DC"] = st.i_prev;
+    }
+}
+
+void solver::update_inductor_state_BE()
+{
+    const int nv = (int)node_voltages.size();
+    const size_t K = ind_skeletons_BE.size();
+
+    for (size_t k = 0; k < K; ++k) {
+        auto& sk = ind_skeletons_BE[k];
+        auto& st = ind_states_BE[k];
+
+        double v1 = (sk.n1 == 0) ? 0.0 : ((sk.n1 - 1 < nv) ? node_voltages[sk.n1 - 1] : 0.0);
+        double v2 = (sk.n2 == 0) ? 0.0 : ((sk.n2 - 1 < nv) ? node_voltages[sk.n2 - 1] : 0.0);
+        double vL = v1 - v2;
+
+        double iL = st.i_prev + ((sk.Req != 0.0) ? (vL / sk.Req) : 0.0);
+        st.i_prev = iL;
+        st.v_prev = vL;
+    }
+}
+
+void solver::reset_dynamic_state_BE()
+{
+    for (auto& st : cap_states_BE) {
+        st.v_prev = 0.0;
+        st.i_prev = 0.0;
+    }
+    for (const auto& sk : cap_skeletons_BE) {
+        ckt.sources[sk.veq_index].parameters["DC"] = 0.0;
+    }
+
+    for (auto& st : ind_states_BE) {
+        st.i_prev = 0.0;
+        st.v_prev = 0.0;
+    }
+    for (const auto& sk : ind_skeletons_BE) {
+        ckt.sources[sk.ieq_index].parameters["DC"] = 0.0;
+    }
+}
+
+void solver::init_transient_BE()
+{
+    const int nv = (int)node_voltages.size();
+    auto V = [&](int node) -> double {
+        if (node == 0) return 0.0;
+        int idx = node - 1;
+        return (idx >= 0 && idx < nv) ? node_voltages[idx] : 0.0;
+    };
+
+    for (size_t k = 0; k < cap_skeletons_BE.size(); ++k) {
+        auto& sk = cap_skeletons_BE[k];
+        auto& st = cap_states_BE[k];
+        st.v_prev = V(sk.n1) - V(sk.n2);
+        st.i_prev = 0.0;
+    }
+
+    for (size_t k = 0; k < ind_skeletons_BE.size(); ++k) {
+        auto& sk = ind_skeletons_BE[k];
+        auto& st = ind_states_BE[k];
+        st.v_prev = V(sk.n1) - V(sk.n2);
+        st.i_prev = 0.0;
+    }
+
+    update_capacitor_rhs_BE();
+    update_inductor_rhs_BE();
+}
+
+void solver::transient_step_BE(double time)
+{
+    update_capacitor_rhs_BE();
+    update_inductor_rhs_BE();
+
+    DC_solve_new(time);
+
+    update_capacitor_state_BE();
+    update_inductor_state_BE();
+}
+
+void solver::set_state_from_x0_BE(const Eigen::VectorXd& x0)
+{
+    const int m = (int)cap_states_BE.size();
+    const int n = (int)ind_states_BE.size();
+    if (x0.size() != m + n) {
+        throw std::runtime_error("x0 size mismatch (BE)");
+    }
+
+    for (int k = 0; k < m; ++k) {
+        cap_states_BE[k].v_prev = x0[k];
+        cap_states_BE[k].i_prev = 0.0;
+    }
+    for (int k = 0; k < n; ++k) {
+        ind_states_BE[k].i_prev = x0[m + k];
+        ind_states_BE[k].v_prev = 0.0;
+    }
+
+    update_capacitor_rhs_BE();
+    update_inductor_rhs_BE();
+}
+
+Eigen::VectorXd solver::propagate_one_period_BE(const Eigen::VectorXd& x0, double T, double tstep)
+{
+    node_voltages.setZero();
+    branch_currents.setZero();
+
+    set_state_from_x0_BE(x0);
+
+    int steps = (int)std::round(T / tstep);
+    for (int s = 0; s < steps; ++s) {
+        double t = s * tstep;
+        transient_step_BE(t);
+    }
+
+    const int m = (int)cap_states_BE.size();
+    const int n = (int)ind_states_BE.size();
+    Eigen::VectorXd xT(m + n);
+    for (int k = 0; k < m; ++k) xT[k] = cap_states_BE[k].v_prev;
+    for (int k = 0; k < n; ++k) xT[m + k] = ind_states_BE[k].i_prev;
+    return xT;
+}
+
+Eigen::VectorXd solver::compute_x0_by_prerun_BE(double T, double tstep, int N_pre_cycles)
+{
+    const int m = (int)cap_states_BE.size();
+    const int n = (int)ind_states_BE.size();
+    const int N = m + n;
+
+    Eigen::VectorXd x0 = Eigen::VectorXd::Zero(N);
+    if (N == 0) return x0;
+    if (tstep <= 0.0 || T <= 0.0) return x0;
+    if (N_pre_cycles <= 0) N_pre_cycles = 1;
+
+    int steps_per_cycle = (int)std::round(T / tstep);
+    if (steps_per_cycle < 1) steps_per_cycle = 1;
+
+    reset_dynamic_state_BE();
+
+    const int node_count = (int)ckt.node_list.size() - 1;
+    node_voltages = Eigen::VectorXd::Zero(node_count);
+    branch_currents.resize(0);
+
+    update_capacitor_rhs_BE();
+    update_inductor_rhs_BE();
+    DC_solve_new(0.0);
+    init_transient_BE();
+
+    const int total_steps = N_pre_cycles * steps_per_cycle;
+    for (int s = 1; s <= total_steps; ++s) {
+        double t = s * tstep;
+        transient_step_BE(t);
+    }
+
+    for (int k = 0; k < m; ++k) x0[k] = cap_states_BE[k].v_prev;
+    for (int k = 0; k < n; ++k) x0[m + k] = ind_states_BE[k].i_prev;
+    return x0;
+}
+
+void solver::run_transient_and_record_BE(double T, double tstep, const Eigen::VectorXd& x0_star)
+{
+    node_voltages.setZero();
+    branch_currents.setZero();
+    tran_plot_data.clear();
+
+    set_state_from_x0_BE(x0_star);
+
+    int steps = (int)std::round(T / tstep);
+    for (int s = 0; s <= steps; ++s) {
+        double t = s * tstep;
+        transient_step_BE(t);
+
+        std::cout << "Time" << "\t" << t << "\n";
+        for (int nid : ckt.plot_node_ids) {
+            double v = (nid == 0) ? 0.0 : node_voltages[nid - 1];
+            tran_plot_data[nid].push_back({t, v});
+            std::cout << "node " << ckt.node_list[nid] << " " << v << "\n";
+        }
+        for (int idx : ckt.plot_branch_current_indices) {
+            if (idx < 0 || idx >= (int)branch_currents.size()) continue;
+            double i = branch_currents[idx];
+            tran_plot_data[-(idx + 1)].push_back({t, i});
+        }
+    }
+}
+
+void solver::PSS_solve_shooting_backward_euler(double T, double tstep, int max_it, double tol)
+{
+    parse_print_variables();
+
+    init_skeleton_BE(tstep);
+
+    const int node_count = (int)ckt.node_list.size() - 1;
+    node_voltages = Eigen::VectorXd::Zero(node_count);
+    branch_currents.setZero();
+
+    init_transient_BE();
+
+    const int m = (int)cap_states_BE.size();
+    const int n = (int)ind_states_BE.size();
+    const int N = m + n;
+
+    int N_pre_cycles = 10;
+    Eigen::VectorXd x0 = compute_x0_by_prerun_BE(T, tstep, N_pre_cycles);
+
+    const double eps = 1e-6;
+    for (int it = 0; it < max_it; ++it) {
+        Eigen::VectorXd xT = propagate_one_period_BE(x0, T, tstep);
+        Eigen::VectorXd F = xT - x0;
+        double nF = F.norm();
+        std::cerr << "[shooting-BE] it=" << it << " |F|=" << nF << "\n";
+
+        if (nF < tol) {
+            std::cerr << "[shooting-BE] converged.\n";
+            run_transient_and_record_BE(T, tstep, x0);
+            return;
+        }
+
+        Eigen::MatrixXd J(N, N);
+        for (int i = 0; i < N; ++i) {
+            Eigen::VectorXd x0p = x0;
+            x0p[i] += eps;
+
+            Eigen::VectorXd xTp = propagate_one_period_BE(x0p, T, tstep);
+            Eigen::VectorXd Fp = xTp - x0p;
+            J.col(i) = (Fp - F) / eps;
+        }
+
+        Eigen::VectorXd dx = J.partialPivLu().solve(-F);
+        x0 = x0 + dx;
+    }
+
+    std::cerr << "[shooting-BE] WARNING: did not converge in " << max_it << " iterations\n";
+    run_transient_and_record_BE(T, tstep, x0);
+}
+
+// TODO: 刚刚我们完成了后向欧拉的shooting method，但是我们在更新初值，计算Jacobian时用的是粗暴的差分法，希望你能够再写一个采用“变分方程/灵敏度传播”实现的计算Jacobian的后向欧拉shooting method函数。（在 shooting 法中，变分方程 / 灵敏度传播就是：在一次周期瞬态仿真的同时，把“状态对初始状态的导数”也一起沿时间推进，周期末直接得到 Jacobian，而不用对每个状态做一次微扰仿真。）
