@@ -85,6 +85,7 @@ struct CapacitorSkeleton {
     int mid;           // 内部节点编号
     double Req;        // 固定等效电阻
     int veq_index;     // 在 sources 中的 index
+    int state_index = -1;   // ★ 必须
 };
 
 //电感状态结构体
@@ -99,4 +100,5 @@ struct InductorSkeleton {
     double L;
     double Req;        // 2L / dt
     int ieq_index;     // 等效电流源索引
+    int state_index = -1;   // ★ 必须
 };

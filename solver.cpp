@@ -4318,46 +4318,39 @@ void solver::init_skeleton_BE(double tstep)
 
     for (const auto& dev : devices) {
         if (dev.type == "C") {
-            auto itv = dev.parameters.find("value");
-            if (itv == dev.parameters.end()) continue;
-            double C = itv->second;
-            if (C <= 0.0 || tstep <= 0.0) continue;
+            double C = dev.parameters.at("value");
 
-            CapacitorState st;
-            st.v_prev = 0.0;
-            st.i_prev = 0.0;
-            cap_states_BE.push_back(st);
+            int st_idx = (int)cap_states_BE.size();
+            cap_states_BE.push_back({0.0, 0.0});
 
             CapacitorSkeleton sk;
             sk.n1 = dev.nodes[0];
             sk.n2 = dev.nodes[1];
             sk.mid = ckt.allocate_internal_node();
-            sk.Req = tstep / C; // BE: Req = dt/C
+            sk.Req = tstep / C;
+            sk.state_index = st_idx;
 
             ckt.add_resistor(sk.n1, sk.mid, sk.Req);
             sk.veq_index = ckt.add_voltage_source(sk.mid, sk.n2, 0.0);
 
             cap_skeletons_BE.push_back(sk);
         } else if (dev.type == "L") {
-            auto itv = dev.parameters.find("value");
-            if (itv == dev.parameters.end()) continue;
-            double L = itv->second;
-            if (L <= 0.0 || tstep <= 0.0) continue;
+            double L = dev.parameters.at("value");
+
+            int st_idx = (int)ind_states_BE.size();
+            ind_states_BE.push_back({0.0, 0.0});
 
             InductorSkeleton sk;
             sk.n1 = dev.nodes[0];
             sk.n2 = dev.nodes[1];
-            sk.L = L;
-            sk.Req = L / tstep; // BE: Req = L/dt, Norton: Ieq=i_prev, G=dt/L
+            sk.L  = L;
+            sk.Req = L / tstep;
+            sk.state_index = st_idx;
 
             ckt.add_resistor(sk.n1, sk.n2, sk.Req);
             sk.ieq_index = ckt.add_current_source(sk.n1, sk.n2, 0.0);
-            ind_skeletons_BE.push_back(sk);
 
-            InductorState st;
-            st.i_prev = 0.0;
-            st.v_prev = 0.0;
-            ind_states_BE.push_back(st);
+            ind_skeletons_BE.push_back(sk);
         }
     }
 }
@@ -4634,4 +4627,153 @@ void solver::PSS_solve_shooting_backward_euler(double T, double tstep, int max_i
     run_transient_and_record_BE(T, tstep, x0);
 }
 
-// TODO: 刚刚我们完成了后向欧拉的shooting method，但是我们在更新初值，计算Jacobian时用的是粗暴的差分法，希望你能够再写一个采用“变分方程/灵敏度传播”实现的计算Jacobian的后向欧拉shooting method函数。（在 shooting 法中，变分方程 / 灵敏度传播就是：在一次周期瞬态仿真的同时，把“状态对初始状态的导数”也一起沿时间推进，周期末直接得到 Jacobian，而不用对每个状态做一次微扰仿真。）
+void solver::PSS_solve_shooting_backward_euler_sensitivity(double T, double tstep, int max_it, double tol)
+{
+    parse_print_variables();
+
+    init_skeleton_BE(tstep);
+
+    const int node_count = (int)ckt.node_list.size() - 1;
+    node_voltages = Eigen::VectorXd::Zero(std::max(0, node_count));
+    branch_currents.resize(0);
+
+    init_transient_BE();
+
+    const int m = (int)cap_states_BE.size();
+    const int n = (int)ind_states_BE.size();
+    const int N = m + n;
+
+    int N_pre_cycles = 10;
+    Eigen::VectorXd x0 = compute_x0_by_prerun_BE(T, tstep, N_pre_cycles);
+
+    if (N == 0) {
+        run_transient_and_record_BE(T, tstep, x0);
+        return;
+    }
+
+    int steps = (int)std::round(T / tstep);
+    if (steps < 1) steps = 1;
+
+    using RowMajorMat = Eigen::Matrix<double, Eigen::Dynamic, Eigen::Dynamic, Eigen::RowMajor>;
+
+    Eigen::MatrixXd dJ_dx0;
+    Eigen::MatrixXd dsol_dx0;
+    const Eigen::MatrixXd I = Eigen::MatrixXd::Identity(N, N);
+
+    const int max_iter_dc = 100;
+    const double tol_dc = 1e-9;
+
+    auto dc_solve_with_sens = [&](double time, const RowMajorMat& S, Eigen::MatrixXd& dsol_out) -> bool {
+        if (node_count <= 0) return true;
+
+        if (node_voltages.size() != node_count) {
+            node_voltages = Eigen::VectorXd::Zero(node_count);
+        }
+
+        for (int iter = 0; iter < max_iter_dc; ++iter) {
+            Eigen::VectorXd prev = node_voltages;
+
+            build_MNA_tran(time);
+
+            Eigen::PartialPivLU<Eigen::MatrixXd> lu(MNA_Y);
+            Eigen::VectorXd solution = lu.solve(J);
+
+            node_voltages = solution.head(node_count);
+            if (solution.size() > node_count) {
+                branch_currents = solution.tail(solution.size() - node_count);
+            } else {
+                branch_currents.resize(0);
+            }
+
+            double max_diff = (node_voltages - prev).cwiseAbs().maxCoeff();
+            if (max_diff < tol_dc) {
+                const int M = (int)solution.size();
+                if (dJ_dx0.rows() != M || dJ_dx0.cols() != N) {
+                    dJ_dx0.resize(M, N);
+                }
+                dJ_dx0.setZero();
+
+                for (int k = 0; k < m; ++k) {
+                    const int src_idx = cap_skeletons_BE[k].veq_index;
+                    const int bc_idx = ckt.sources[src_idx].branch_current_index;
+                    const int row = node_count + bc_idx;
+                    if (row >= 0 && row < M) {
+                        dJ_dx0.row(row) = S.row(k);
+                    }
+                }
+
+                for (int k = 0; k < n; ++k) {
+                    const int idx = m + k;
+                    const auto& sk = ind_skeletons_BE[k];
+                    if (sk.n1 != 0) dJ_dx0.row(sk.n1 - 1) -= S.row(idx);
+                    if (sk.n2 != 0) dJ_dx0.row(sk.n2 - 1) += S.row(idx);
+                }
+
+                dsol_out = lu.solve(dJ_dx0);
+                return true;
+            }
+        }
+
+        std::cerr << "[shooting-BE-sens] WARNING: DC solve did not converge at t=" << time << "\n";
+        return false;
+    };
+
+    for (int it = 0; it < max_it; ++it) {
+        node_voltages.setZero();
+        branch_currents.setZero();
+        set_state_from_x0_BE(x0);
+
+        RowMajorMat S = RowMajorMat::Identity(N, N);
+
+        for (int s = 0; s < steps; ++s) {
+            double t = s * tstep;
+
+            update_capacitor_rhs_BE();
+            update_inductor_rhs_BE();
+
+            if (!dc_solve_with_sens(t, S, dsol_dx0)) {
+                break;
+            }
+
+            for (int k = 0; k < m; ++k) {
+                const auto& sk = cap_skeletons_BE[k];
+                S.row(k).setZero();
+                if (sk.n1 != 0) S.row(k) += dsol_dx0.row(sk.n1 - 1);
+                if (sk.n2 != 0) S.row(k) -= dsol_dx0.row(sk.n2 - 1);
+            }
+
+            for (int k = 0; k < n; ++k) {
+                const auto& sk = ind_skeletons_BE[k];
+                if (sk.Req != 0.0) {
+                    const double invReq = 1.0 / sk.Req;
+                    if (sk.n1 != 0) S.row(m + k) += dsol_dx0.row(sk.n1 - 1) * invReq;
+                    if (sk.n2 != 0) S.row(m + k) -= dsol_dx0.row(sk.n2 - 1) * invReq;
+                }
+            }
+
+            update_capacitor_state_BE();
+            update_inductor_state_BE();
+        }
+
+        Eigen::VectorXd xT(N);
+        for (int k = 0; k < m; ++k) xT[k] = cap_states_BE[k].v_prev;
+        for (int k = 0; k < n; ++k) xT[m + k] = ind_states_BE[k].i_prev;
+
+        Eigen::VectorXd F = xT - x0;
+        double nF = F.norm();
+        std::cerr << "[shooting-BE-sens] it=" << it << " |F|=" << nF << "\n";
+
+        if (nF < tol) {
+            std::cerr << "[shooting-BE-sens] converged.\n";
+            run_transient_and_record_BE(T, tstep, x0);
+            return;
+        }
+
+        Eigen::MatrixXd JF = S - I;
+        Eigen::VectorXd dx = JF.partialPivLu().solve(-F);
+        x0 += dx;
+    }
+
+    std::cerr << "[shooting-BE-sens] WARNING: did not converge in " << max_it << " iterations\n";
+    run_transient_and_record_BE(T, tstep, x0);
+}

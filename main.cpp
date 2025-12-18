@@ -305,7 +305,26 @@ int main(int argc, char* argv[]){
 
             double period_T = 1.0 / freq;
             double tstep = period_T / N_sample; //默认时间步长为周期的1/1000
-            sol.PSS_solve_shooting_backward_euler(period_T, tstep, 100, 1e-9);
+            cout << "Select the way of shooting method:\n";
+            cout << "1. TR\n";
+            cout << "2. BE\n";
+            cout << "3. BE_sensitivity\n";
+            int method_choice;
+            cin >> method_choice;
+            switch (method_choice){
+                case 1:
+                    sol.PSS_solve_shooting_new_new(period_T, tstep, 100, 1e-9);
+                    break;
+                case 2:
+                    sol.PSS_solve_shooting_backward_euler(period_T, tstep, 100, 1e-9);
+                    break;
+                case 3:
+                    sol.PSS_solve_shooting_backward_euler_sensitivity(period_T, tstep, 100, 1e-9);
+                    break;
+                default:
+                    cout << "Invalid choice, using LU Decomposition by default.\n";
+                    sol.setLinearSolverMethod(LinearSolverMethod::LU_DECOMPOSITION);
+            }
             //sol.PSS_solve_shooting_exact_jacobian(period_T, tstep);
 
             // // Debug: 输出要plot的节点ID
