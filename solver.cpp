@@ -47,6 +47,15 @@ solver::solver(circuit& ckt_, analysis& analysis_,
     // steady_state_method = SteadyStateMethod::SHOOTING;
 }
 
+void solver::print_branch_current(int branch_index){
+    if (branch_index >= 0 && branch_index < branch_currents.size()){
+        std::cout << "I(" << ckt.sources[branch_index].name << ") " << branch_currents[branch_index] << " A\n";
+    }
+    else{
+        std::cout << "Error: Branch current index " << branch_index << " is out of range.\n";
+    }
+}
+
 void solver::set_initial_node_voltages(std::string node_name, double voltage) {
     int node_id = ckt.getNodeID(node_name);
     if (node_id != -1) {

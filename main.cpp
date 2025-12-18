@@ -57,6 +57,10 @@ int main(int argc, char* argv[]){
             for (int node_id : sol.get_plot_node_ids()){
                 sol.print_node_voltage(node_id);
             }
+            //打印要观察的支路电流
+            for (int node_id : sol.get_plot_current_ids()){
+                sol.print_branch_current(node_id);
+            }
         }
         else if (analysis.type == "TRAN"){
             double tstep = analysis.parameters.count("tstep") ? analysis.parameters["tstep"] : 1e-9;
