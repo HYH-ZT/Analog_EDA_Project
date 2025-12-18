@@ -158,6 +158,7 @@ class solver {
         // 获取ckt中要观察的节点列表
         const std::vector<int>& get_plot_node_ids() const { return ckt.plot_node_ids; }
         const std::vector<int>& get_plot_current_ids() const { return ckt.plot_branch_current_indices; }
+        const double get_branch_currents(int node_id) const {return branch_currents[node_id]; }
         const int get_voltage_node_size() const { return ckt.node_list.size() - 1; } //不含地节点
         // 输出所有节点电压
         void print_node_voltages();
