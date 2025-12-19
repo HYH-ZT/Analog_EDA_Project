@@ -651,6 +651,102 @@ void solver::solve_linear_MNA_Gauss_Jacobi(){
     }
 }
 
+//Gauss-Seidel迭代法求解线性MNA方程
+void solver::solve_linear_MNA_Gauss_Seidel(){
+    //先进行行交换，确保对角线元素不为零
+    int n = MNA_Y.rows();
+
+    //对于MNA(i,i)为零的情况，必然是电压源，寻找上方为1或者-1的行，哪个行对应的对角元小，与那行交换
+    for (int i = 0; i < n; ++i){
+        if (std::abs(MNA_Y(i, i)) < 1e-12){
+            //寻找上方为1或者-1的行
+            int row1 = -1;
+            int row2 = -1;
+            for (int j = 0; j < n; ++j){
+                if (j != i && (std::abs(MNA_Y(j, i) - 1.0) < 1e-12 || std::abs(MNA_Y(j, i) + 1.0) < 1e-12)){
+                    if (row1 == -1){
+                        row1 = j;
+                    } else {
+                        row2 = j;
+                        break;
+                    }
+                }
+            }
+            //选择对角元较小的行进行交换
+            int swap_row = -1;
+            if (row1 != -1 && row2 != -1){
+                if (std::abs(MNA_Y(row1, row1)) < std::abs(MNA_Y(row2, row2))){
+                    swap_row = row1;
+                } else {
+                    swap_row = row2;
+                }
+            } else if (row1 != -1){
+                swap_row = row1;
+            } else if (row2 != -1){
+                swap_row = row2;
+            }
+            if (swap_row != -1){
+                MNA_Y.row(i).swap(MNA_Y.row(swap_row));
+                std::swap(J(i), J(swap_row));
+                // std::cout << "Swapping rows " << i << " and " << swap_row << " to avoid zero diagonal\n";
+            }
+        }
+    }
+    Eigen::VectorXd x_old = Eigen::VectorXd::Zero(n);
+    Eigen::VectorXd x_new = Eigen::VectorXd::Zero(n);
+    const int max_iterations = 5000;
+    const double tolerance = 1e-9;
+    for (int iter = 0; iter < max_iterations; ++iter) {
+        x_new = x_old; //每次迭代开始时，先复制旧值
+        for (int i = 0; i < n; ++i) {
+            double sum = J(i);
+            for (int j = 0; j < n; ++j) {
+                if (j != i) {
+                    sum -= MNA_Y(i, j) * x_new(j); //使用最新的x_new值
+                }
+            }
+            if (std::abs(MNA_Y(i, i)) < 1e-12) {
+                // std::cout << "Warning: Near-zero diagonal element at row " << i << "\n";
+                x_new(i) = 0.0;
+            } else {
+                x_new(i) = sum / MNA_Y(i, i);
+            }
+        }
+        //检查收敛性
+        double error = (x_new - x_old).norm();
+        if (error < tolerance) {
+            std::cout << "Converged in " << iter + 1 << " iterations with error: " << error << "\n";
+            break;
+        }
+        x_old = x_new;
+        if (iter == max_iterations - 1) {
+            std::cout << "Warning: Did not converge within the maximum number of iterations\n";
+        }
+    }
+    //存储节点电压结果
+    node_voltages.resize(std::min((int)(ckt.node_map.size() - 1), (int)x_new.size()));
+    for (int i = 0; i < node_voltages.size(); ++i){
+        node_voltages[i] = x_new(i);
+    }
+    // //Debug: 输出节点电压
+    // std::cout << "Node Voltages:\n";
+    // for (int i = 0; i < node_voltages.size(); ++i) {
+    //     std::cout << "V" << i+1 << ": " << node_voltages[i] << " V\n";
+    // }
+    
+    //如果有额外的变量（如支路电流），也存储起来
+    if (x_new.size() > ckt.node_map.size() - 1) {
+        branch_currents.resize(x_new.size() - (ckt.node_map.size() - 1));
+        for (int i = ckt.node_map.size() - 1; i < x_new.size(); ++i) {
+            branch_currents[i - (ckt.node_map.size() - 1)] = x_new(i);
+        }
+        // std::cout << "Branch Currents:\n";
+        // for (int i = 0; i < branch_currents.size(); ++i) {
+        //     std::cout << "I" << i << ": " << branch_currents[i] << " A\n";
+        // }
+    }
+}
+
 //根据设置的方法选择线性方程求解算法
 void solver::solve_linear_MNA(){
     switch (linear_solver_method) {
@@ -666,6 +762,9 @@ void solver::solve_linear_MNA(){
             break;
         case LinearSolverMethod::GAUSS_JACOBI:
             solve_linear_MNA_Gauss_Jacobi();
+            break;
+        case LinearSolverMethod::GAUSS_SEIDEL:
+            solve_linear_MNA_Gauss_Seidel();
             break;
         default:
             std::cout << "Error: Unknown linear solver method\n";
@@ -1035,6 +1134,83 @@ void solver::build_sources_MNA(){
     }
 }
 
+void solver::build_sources_MNA_ramp(double alpha){
+    // 清空打印支路电流索引
+    ckt.print_branch_current_indices.clear();
+    ckt.plot_branch_current_indices.clear();
+
+    for (auto &dev : ckt.sources){
+        char c = toupper(dev.name[0]);
+
+        // 独立电压源
+        if (c == 'V'){
+            int n1 = dev.nodes[0];
+            int n2 = dev.nodes[1];
+
+            // 斜坡：把源值按 alpha 缩放
+            double value = alpha * dev.parameters["DC"];
+
+            // 先引入支路电流变量，从 n1 流向 n2
+            int new_var_index = MNA_Y.rows();
+            MNA_Y.conservativeResize(new_var_index + 1, new_var_index + 1);
+            MNA_Y.row(new_var_index).setZero();
+            MNA_Y.col(new_var_index).setZero();
+
+            J.conservativeResize(new_var_index + 1);
+            J(new_var_index) = value;
+
+            // 记录该电压源对应的支路电流变量索引（从序号0开始）
+            dev.branch_current_index = new_var_index - ((int)ckt.node_list.size() - 1);
+
+            // 如果需要打印/绘制支路电流，索引要减去节点数偏移
+            if (dev.printI){
+                ckt.print_branch_current_indices.push_back(new_var_index - ((int)ckt.node_list.size() - 1));
+            }
+            if (dev.plotI){
+                ckt.plot_branch_current_indices.push_back(new_var_index - ((int)ckt.node_list.size() - 1));
+            }
+
+            // 如果是瞬态等效电压源，更新动态器件映射
+            if (!dev.original_device_name.empty()) {
+                dynamic_device_current_map[dev.original_device_name] =
+                    new_var_index - ((int)ckt.node_list.size() - 1);
+            }
+
+            // 如果是电感的等效电压源，保存指向该电感器件的指针，以便后续更新电流
+            if (dev.original_device_ptr) {
+                dev.original_device_ptr->branch_current_index =
+                    new_var_index - ((int)ckt.node_list.size() - 1);
+            }
+
+            // KVL 方程
+            if (n1 != 0){
+                MNA_Y(new_var_index, n1 - 1) = 1;
+                MNA_Y(n1 - 1, new_var_index) = 1;
+            }
+            if (n2 != 0){
+                MNA_Y(new_var_index, n2 - 1) = -1;
+                MNA_Y(n2 - 1, new_var_index) = -1;
+            }
+        }
+
+        // 独立电流源
+        if (c == 'I'){
+            int n1 = dev.nodes[0];
+            int n2 = dev.nodes[1];
+
+            // 斜坡：把源值按 alpha 缩放
+            double value = alpha * dev.parameters["DC"];
+
+            if (n1 != 0){
+                J(n1 - 1) -= value; // 流出节点为负
+            }
+            if (n2 != 0){
+                J(n2 - 1) += value; // 流入节点为正
+            }
+        }
+    }
+}
+
 
 void solver::build_sources_MNA(bool in_tran,double time){
     //清空打印支路电流索引
@@ -1242,6 +1418,100 @@ void solver::DC_solve() {
     // print_node_voltages();
 }
 
+
+void solver::DC_solve_ramp() {
+    const int    maxNewtonIter = 500;
+    const double tol           = 1e-9;
+
+    // 自适应步长参数（可按作业/电路规模调整）
+    const double alphaMinStep  = 1e-4;   // 最小步长：再小就认为失败
+    const double alphaMaxStep  = 0.2;    // 最大步长：避免一下子跨太大
+    double       alphaStep     = 0.05;   // 初始步长（建议 0.02~0.1）
+
+    // 收敛快则加速（阈值/倍率可调）
+    const int    fastIterThres = 8;      // 小于该迭代次数视为“很快”
+    const double growFactor    = 1.5;    // 步长放大倍数
+    const double shrinkFactor  = 0.5;    // 步长缩小倍数
+
+    parse_print_variables();
+    build_linear_MNA();
+
+    int nodeCount = (int)ckt.node_list.size() - 1;
+    node_voltages = Eigen::VectorXd::Zero(nodeCount);
+
+    // 从 alpha=0 开始往 1 推进
+    double alpha = 0.0;
+
+    // 为了能在“某一步失败”时回退，保存上一次成功解
+    Eigen::VectorXd last_good_solution = node_voltages;
+
+    while (alpha < 1.0 - 1e-15) {
+        // 这一步的目标 alpha（不要超过 1）
+        double next_alpha = alpha + alphaStep;
+        if (next_alpha > 1.0) next_alpha = 1.0;
+
+        // 用上一次成功解作为本步初值（非常关键）
+        node_voltages = last_good_solution;
+
+        bool converged = false;
+        int  iter      = 0;
+
+        for (iter = 0; iter < maxNewtonIter; ++iter) {
+            MNA_Y = liner_Y;
+            J     = Eigen::VectorXd::Zero(MNA_Y.rows());
+
+            build_nonlinear_MNA();
+
+            // 源按 next_alpha 加载（本步目标）
+            build_sources_MNA_ramp(next_alpha);
+
+            Eigen::VectorXd old_node_voltages = node_voltages;
+            solve_linear_MNA();
+
+            double max_diff = (node_voltages - old_node_voltages).cwiseAbs().maxCoeff();
+            if (max_diff < tol) {
+                converged = true;
+                break;
+            }
+        }
+
+        if (converged) {
+            // 接受本步
+            alpha = next_alpha;
+            last_good_solution = node_voltages;
+
+            // 如果收敛很快，尝试增大步长加速
+            if (iter < fastIterThres) {
+                alphaStep = std::min(alphaStep * growFactor, alphaMaxStep);
+            }
+
+            // （可选）打印进度
+            // std::cout << "alpha=" << alpha << " converged in " << (iter+1) << " iters, step=" << alphaStep << "\n";
+        } else {
+            // 本步失败：缩小步长并重试
+            alphaStep *= shrinkFactor;
+
+            // 回退到上一次成功解（确保状态一致）
+            node_voltages = last_good_solution;
+
+            if (alphaStep < alphaMinStep) {
+                std::cout << "Warning: DC did NOT converge during ramp stepping.\n";
+                std::cout << "Stopped at alpha=" << alpha
+                          << " (next_alpha=" << next_alpha << "), alphaStep=" << alphaStep << "\n";
+                break;
+            }
+
+            // （可选）打印失败信息
+            // std::cout << "alpha step failed at next_alpha=" << next_alpha << ", shrinking step to " << alphaStep << "\n";
+        }
+    }
+
+    if (alpha >= 1.0 - 1e-15) {
+        std::cout << "Ramp DC converged to alpha=1.\n";
+    }
+}
+
+
 // 使用节点名和电压值的映射来设置初值
 void solver::DC_solve(const std::map<std::string, double>& node_voltage_map, bool in_tran) {
     const int maxNewtonIter = 500;
@@ -1328,6 +1598,7 @@ void solver::DC_solve(const std::map<std::string, double>& node_voltage_map, boo
         }
     }
 }
+
 
 //根据给定的初始节点电压进行直流求解
 void solver::DC_solve(const Eigen::VectorXd& initial_node_voltages, bool in_tran, double time) {
@@ -3891,22 +4162,32 @@ void solver::PSS_solve_shooting_new_new(double T, double tstep, int max_it, doub
     // for (int k = 0; k < m; ++k) x0[k] = cap_states[k].v_prev;
     // for (int k = 0; k < n; ++k) x0[m + k] = ind_states[k].i_prev;
 
-    int N_pre_cycles = 10;
+    int N_pre_cycles = 3;
     Eigen::VectorXd x0 = compute_x0_by_prerun_TR(T, tstep, N_pre_cycles);
-
+    Eigen::VectorXd V0 = node_voltages;
+    Eigen::VectorXd I0 = branch_currents;
 
     // ===== C) Newton 外层 =====
     const double eps = 1e-6;
 
     for (int it = 0; it < max_it; ++it) {
+
+
         Eigen::VectorXd xT = propagate_one_period(x0, T, tstep);
         Eigen::VectorXd F  = xT - x0;
+
+        V0 = node_voltages;
+        I0 = branch_currents;
 
         double nF = F.norm();
         std::cerr << "[shooting] it=" << it << " |F|=" << nF << "\n";
 
         if (nF < tol) {
             std::cerr << "[shooting] converged.\n";
+
+            node_voltages = V0;
+            branch_currents = I0;
+
             run_transient_and_record(T, tstep, x0); // 最终稳态波形
             return;
         }
@@ -3916,6 +4197,9 @@ void solver::PSS_solve_shooting_new_new(double T, double tstep, int max_it, doub
         for (int i = 0; i < N; ++i) {
             Eigen::VectorXd x0p = x0;
             x0p[i] += eps;
+
+            node_voltages = V0;
+            branch_currents = I0;
 
             Eigen::VectorXd xTp = propagate_one_period(x0p, T, tstep);
             Eigen::VectorXd Fp  = xTp - x0p;
@@ -3955,12 +4239,12 @@ void solver::run_transient_and_record(double T, double tstep, const Eigen::Vecto
         double t = s * tstep;
 
         transient_step(t);
-        std::cout << "Time" << "\t" << t << "\n";
+        //std::cout << "Time" << "\t" << t << "\n";
         // ---- 节点电压 ----
         for (int nid : ckt.plot_node_ids) {
             double v = (nid == 0) ? 0.0 : node_voltages[nid - 1];
             tran_plot_data[nid].push_back({t, v});
-            std::cout << "node " << ckt.node_list[nid] << " " << v << "\n";
+            //std::cout << "node " << ckt.node_list[nid] << " " << v << "\n";
         }
 
         // ---- 支路电流 ----
@@ -3973,10 +4257,22 @@ void solver::run_transient_and_record(double T, double tstep, const Eigen::Vecto
             tran_plot_data[-(idx + 1)].push_back({t, i});
         }
     }
+    std::cout <<"\nresults:\n";
+    for (int nid : ckt.plot_node_ids) {
+        double v = (nid == 0) ? 0.0 : node_voltages[nid - 1];
+        std::cout << "node " << ckt.node_list[nid] << " " << tran_plot_data[nid][tran_plot_data[nid].size()-1].second << "\n";
+    }
+    for (int idx : ckt.plot_branch_current_indices) {
+        if (idx < 0 || idx >= (int)branch_currents.size()) {
+            std::cerr << "[WARN] branch idx out of range: " << idx << "\n";
+            continue;
+        }
+        print_branch_current(idx);
+    }
 }
 
 void solver::DC_solve_new(double time) {
-    const int max_iter = 100;
+    const int max_iter = 1000;
     const double tol = 1e-9;
     const int node_count = static_cast<int>(ckt.node_list.size()) - 1;
 
@@ -4023,7 +4319,7 @@ void solver::DC_solve_new(double time) {
         }
     }
 
-    std::cerr << "Warning: DC_solve_new did not converge\n";
+    //std::cerr << "Warning: DC_solve_new did not converge\n";
 }
 
 void solver::build_MNA_tran(double time){
@@ -4202,13 +4498,13 @@ void solver::set_state_from_x0(const Eigen::VectorXd& x0) {
 Eigen::VectorXd solver::propagate_one_period(const Eigen::VectorXd& x0, double T, double tstep) {
     // 关键：每次 propagation 只重置“数值状态”，不要再 init_skeleton()
     // node_voltages/branch_currents 这些都回到初始即可
-    node_voltages.setZero();
-    branch_currents.setZero();
+    //node_voltages.setZero();
+    //branch_currents.setZero();
 
     set_state_from_x0(x0);
 
     int steps = (int)std::round(T / tstep);
-    for (int s = 0; s < steps; ++s) {
+    for (int s = 0; s <= steps; ++s) {
         double t = s * tstep;
         transient_step(t);  // 你现成：update_rhs -> DC_solve_new -> update_state
     }
@@ -4510,7 +4806,7 @@ Eigen::VectorXd solver::propagate_one_period_BE(const Eigen::VectorXd& x0, doubl
     set_state_from_x0_BE(x0);
 
     int steps = (int)std::round(T / tstep);
-    for (int s = 0; s < steps; ++s) {
+    for (int s = 0; s <= steps; ++s) {
         double t = s * tstep;
         transient_step_BE(t);
     }
@@ -4530,8 +4826,16 @@ Eigen::VectorXd solver::compute_x0_by_prerun_BE(double T, double tstep, int N_pr
     const int N = m + n;
 
     Eigen::VectorXd x0 = Eigen::VectorXd::Zero(N);
-    if (N == 0) return x0;
-    if (tstep <= 0.0 || T <= 0.0) return x0;
+
+    // ---- 安全检查 ----
+    if (N == 0) {
+        std::cerr << "[pre-run] No dynamic states (no C/L). x0 is empty.\n";
+        return x0;
+    }
+    if (tstep <= 0 || T <= 0) {
+        std::cerr << "[pre-run] invalid T/tstep.\n";
+        return x0;
+    }
     if (N_pre_cycles <= 0) N_pre_cycles = 1;
 
     int steps_per_cycle = (int)std::round(T / tstep);
@@ -4552,6 +4856,17 @@ Eigen::VectorXd solver::compute_x0_by_prerun_BE(double T, double tstep, int N_pr
     for (int s = 1; s <= total_steps; ++s) {
         double t = s * tstep;
         transient_step_BE(t);
+
+        // 可选：每跑完一个周期打印一下状态范数，方便观察是否趋于周期稳态
+        if (s % steps_per_cycle == 0) {
+            double cap_norm = 0.0, ind_norm = 0.0;
+            for (auto& cs : cap_states_BE) cap_norm += cs.v_prev * cs.v_prev;
+            for (auto& is : ind_states_BE) ind_norm += is.i_prev * is.i_prev;
+            std::cerr << "[pre-run] cycle=" << (s / steps_per_cycle)
+                      << " cap_rms=" << std::sqrt(cap_norm / std::max(1, m))
+                      << " ind_rms=" << std::sqrt(ind_norm / std::max(1, n))
+                      << "\n";
+        }
     }
 
     for (int k = 0; k < m; ++k) x0[k] = cap_states_BE[k].v_prev;
@@ -4572,17 +4887,29 @@ void solver::run_transient_and_record_BE(double T, double tstep, const Eigen::Ve
         double t = s * tstep;
         transient_step_BE(t);
 
-        std::cout << "Time" << "\t" << t << "\n";
+        //std::cout << "Time" << "\t" << t << "\n";
         for (int nid : ckt.plot_node_ids) {
             double v = (nid == 0) ? 0.0 : node_voltages[nid - 1];
             tran_plot_data[nid].push_back({t, v});
-            std::cout << "node " << ckt.node_list[nid] << " " << v << "\n";
+            //std::cout << "node " << ckt.node_list[nid] << " " << v << "\n";
         }
         for (int idx : ckt.plot_branch_current_indices) {
             if (idx < 0 || idx >= (int)branch_currents.size()) continue;
             double i = branch_currents[idx];
             tran_plot_data[-(idx + 1)].push_back({t, i});
         }
+    }
+    std::cout <<"\nresults:\n";
+    for (int nid : ckt.plot_node_ids) {
+        double v = (nid == 0) ? 0.0 : node_voltages[nid - 1];
+        std::cout << "node " << ckt.node_list[nid] << " " << tran_plot_data[nid][tran_plot_data[nid].size()-1].second << "\n";
+    }
+    for (int idx : ckt.plot_branch_current_indices) {
+        if (idx < 0 || idx >= (int)branch_currents.size()) {
+            std::cerr << "[WARN] branch idx out of range: " << idx << "\n";
+            continue;
+        }
+        print_branch_current(idx);
     }
 }
 
@@ -4602,11 +4929,16 @@ void solver::PSS_solve_shooting_backward_euler(double T, double tstep, int max_i
     const int n = (int)ind_states_BE.size();
     const int N = m + n;
 
-    int N_pre_cycles = 10;
+    int N_pre_cycles = 0;
     Eigen::VectorXd x0 = compute_x0_by_prerun_BE(T, tstep, N_pre_cycles);
+    Eigen::VectorXd V0 = node_voltages;
+    Eigen::VectorXd I0 = branch_currents;
 
     const double eps = 1e-6;
     for (int it = 0; it < max_it; ++it) {
+        V0 = node_voltages;
+        I0 = branch_currents;
+
         Eigen::VectorXd xT = propagate_one_period_BE(x0, T, tstep);
         Eigen::VectorXd F = xT - x0;
         double nF = F.norm();
@@ -4614,12 +4946,16 @@ void solver::PSS_solve_shooting_backward_euler(double T, double tstep, int max_i
 
         if (nF < tol) {
             std::cerr << "[shooting-BE] converged.\n";
+            node_voltages = V0;
+            branch_currents = I0;
             run_transient_and_record_BE(T, tstep, x0);
             return;
         }
 
         Eigen::MatrixXd J(N, N);
         for (int i = 0; i < N; ++i) {
+            node_voltages = V0;
+            branch_currents = I0;
             Eigen::VectorXd x0p = x0;
             x0p[i] += eps;
 
@@ -4652,7 +4988,7 @@ void solver::PSS_solve_shooting_backward_euler_sensitivity(double T, double tste
     const int n = (int)ind_states_BE.size();
     const int N = m + n;
 
-    int N_pre_cycles = 10;
+    int N_pre_cycles = 0;
     Eigen::VectorXd x0 = compute_x0_by_prerun_BE(T, tstep, N_pre_cycles);
 
     if (N == 0) {
@@ -4734,7 +5070,7 @@ void solver::PSS_solve_shooting_backward_euler_sensitivity(double T, double tste
 
         RowMajorMat S = RowMajorMat::Identity(N, N);
 
-        for (int s = 0; s < steps; ++s) {
+        for (int s = 0; s <= steps; ++s) {
             double t = s * tstep;
 
             update_capacitor_rhs_BE();

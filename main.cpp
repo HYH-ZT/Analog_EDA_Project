@@ -32,6 +32,7 @@ int main(int argc, char* argv[]){
             cout << "2. LU Decomposition\n";
             cout << "3. Manual LU\n";
             cout << "4. Gauss-Jacobi Iteration\n";
+            cout << "5. Gauss-Seidel Iteration\n";
             int method_choice;
             cin >> method_choice;
             switch (method_choice){
@@ -47,12 +48,15 @@ int main(int argc, char* argv[]){
                 case 4:
                     sol.setLinearSolverMethod(LinearSolverMethod::GAUSS_JACOBI);
                     break;
+                case 5:
+                    sol.setLinearSolverMethod(LinearSolverMethod::GAUSS_SEIDEL);
+                    break;
                 default:
                     cout << "Invalid choice, using LU Decomposition by default.\n";
                     sol.setLinearSolverMethod(LinearSolverMethod::LU_DECOMPOSITION);
             }
             //解DC分析
-            sol.DC_solve();
+            sol.DC_solve_ramp();
             //打印要观察的节点电压
             for (int node_id : sol.get_plot_node_ids()){
                 sol.print_node_voltage(node_id);
@@ -99,6 +103,7 @@ int main(int argc, char* argv[]){
             cout << "2. LU Decomposition\n";
             cout << "3. Manual LU\n";
             cout << "4. Gauss-Jacobi Iteration\n";
+            cout << "5. Gauss-Seidel Iteration\n";
             int method_choice;
             cin >> method_choice;
             switch (method_choice){
@@ -114,6 +119,8 @@ int main(int argc, char* argv[]){
                 case 4:
                     sol.setLinearSolverMethod(LinearSolverMethod::GAUSS_JACOBI);
                     break;
+                case 5:
+                    sol.setLinearSolverMethod(LinearSolverMethod::GAUSS_SEIDEL);
                 default:
                     cout << "Invalid choice, using LU Decomposition by default.\n";
                     sol.setLinearSolverMethod(LinearSolverMethod::LU_DECOMPOSITION);

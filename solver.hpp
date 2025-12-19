@@ -8,7 +8,8 @@ enum class LinearSolverMethod {
     GAUSS_ELIMINATION = 0,  // 高斯消去法
     LU_DECOMPOSITION = 1,   // LU分解法（库函数）
     MANUAL_LU = 2,          // 手动LU分解法
-    GAUSS_JACOBI = 3        // Gauss-Jacobi迭代法
+    GAUSS_JACOBI = 3,        // Gauss-Jacobi迭代法
+    GAUSS_SEIDEL = 4
 };
 
 // 瞬态分析方法枚举
@@ -88,6 +89,7 @@ class solver {
         void build_nonlinear_MNA();
         //电源的处理
         void build_sources_MNA();
+        void build_sources_MNA_ramp(double alpha);
         void build_sources_MNA(bool in_tran,double time);
 
         //高斯消去法线性MNA方程求解
@@ -100,6 +102,8 @@ class solver {
         void solve_with_LU_matrices();
         //Gauss-Jacobi迭代法求解线性MNA方程
         void solve_linear_MNA_Gauss_Jacobi();
+        //Gauss_Seidel迭代法求解线性MNA方程
+        void solve_linear_MNA_Gauss_Seidel();
         //根据设置的方法选择线性方程求解算法
         void solve_linear_MNA();
         //根据输入参数，选择矩阵方程求解方法（兼容旧接口）
@@ -177,6 +181,7 @@ class solver {
         
         //直流分析
         void DC_solve();    //默认初值为0
+        void DC_solve_ramp();
         void DC_solve(const Eigen::VectorXd& initial_voltages,bool in_tran = false,double time = 0.0);    //根据输入的节点电压向量设置初值，给瞬态用的
         void DC_solve(const std::map<std::string, double>& node_voltage_map,bool in_tran = false);  //根据节点名和电压值的映射设置初值，给人用的
         //瞬态分析
