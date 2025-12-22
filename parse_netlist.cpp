@@ -186,8 +186,10 @@ static void parseAnalysisLine(const std::string& line, std::vector<analysis>& an
     else if (cmd == ".shooting" || cmd == ".SHOOTING") {
         a.type = "SHOOTING";
         double freq;
-        iss >> freq;
-        a.parameters["freq"] = freq;
+        if (iss >> freq) {
+            a.parameters["freq"] = freq;
+        }
+        // else：什么都不做，表示 freq 未指定
         analysis_list.push_back(a);
     }
     else if (cmd == ".print") {

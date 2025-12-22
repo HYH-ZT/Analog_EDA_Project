@@ -47,7 +47,7 @@ Rs2 113 111 25
 *.hb 100e6 50
 *.print hb V(102) V(103) V(112) V(113) V(154) V(164) I(Vdd).
 
-.shooting 100e6
+.shooting 
 
 *.dc
 .plotnv  102
