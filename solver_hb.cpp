@@ -12,58 +12,70 @@ namespace {
 Eigen::VectorXcd solve_lu_partial_pivot(const Eigen::MatrixXcd& A, const Eigen::VectorXcd& b){
     const int n = A.rows();
     Eigen::MatrixXcd lu = A;
-    Eigen::VectorXi piv(n);
-    for(int i = 0; i < n; ++i){
-        piv(i) = i;
+    Eigen::VectorXcd rhs = b;
+    if(n == 0){
+        return rhs;
     }
+
+    std::complex<double>* data = lu.data();
+    const int ld = lu.outerStride();
+    std::complex<double>* rhs_data = rhs.data();
 
     for(int k = 0; k < n; ++k){
         int pivot_row = k;
-        double max_abs = 0.0;
+        double max_norm = 0.0;
+        std::complex<double>* col_k = data + k * ld;
         for(int i = k; i < n; ++i){
-            double val = std::abs(lu(i, k));
-            if(val > max_abs){
-                max_abs = val;
+            double val = std::norm(col_k[i]);
+            if(val > max_norm){
+                max_norm = val;
                 pivot_row = i;
             }
         }
-        if(max_abs == 0.0){
+        if(max_norm == 0.0){
             return Eigen::VectorXcd::Zero(n);
         }
         if(pivot_row != k){
-            lu.row(k).swap(lu.row(pivot_row));
-            std::swap(piv(k), piv(pivot_row));
+            for(int j = 0; j < n; ++j){
+                std::complex<double>* col_j = data + j * ld;
+                std::swap(col_j[k], col_j[pivot_row]);
+            }
+            std::swap(rhs_data[k], rhs_data[pivot_row]);
+            col_k = data + k * ld;
         }
-        const std::complex<double> pivot = lu(k, k);
+
+        const std::complex<double> pivot = col_k[k];
         for(int i = k + 1; i < n; ++i){
-            lu(i, k) /= pivot;
-            for(int j = k + 1; j < n; ++j){
-                lu(i, j) -= lu(i, k) * lu(k, j);
+            col_k[i] /= pivot;
+        }
+
+        for(int j = k + 1; j < n; ++j){
+            std::complex<double>* col_j = data + j * ld;
+            const std::complex<double> u_kj = col_j[k];
+            for(int i = k + 1; i < n; ++i){
+                col_j[i] -= col_k[i] * u_kj;
             }
         }
     }
 
-    Eigen::VectorXcd pb(n);
-    for(int i = 0; i < n; ++i){
-        pb(i) = b(piv(i));
-    }
-
     Eigen::VectorXcd y(n);
+    std::complex<double>* y_data = y.data();
     for(int i = 0; i < n; ++i){
-        std::complex<double> sum = pb(i);
+        std::complex<double> sum = rhs_data[i];
         for(int j = 0; j < i; ++j){
-            sum -= lu(i, j) * y(j);
+            sum -= data[i + j * ld] * y_data[j];
         }
-        y(i) = sum;
+        y_data[i] = sum;
     }
 
     Eigen::VectorXcd x(n);
+    std::complex<double>* x_data = x.data();
     for(int i = n - 1; i >= 0; --i){
-        std::complex<double> sum = y(i);
+        std::complex<double> sum = y_data[i];
         for(int j = i + 1; j < n; ++j){
-            sum -= lu(i, j) * x(j);
+            sum -= data[i + j * ld] * x_data[j];
         }
-        x(i) = sum / lu(i, i);
+        x_data[i] = sum / data[i + i * ld];
     }
     return x;
 }
