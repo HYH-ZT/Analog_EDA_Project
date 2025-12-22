@@ -44,10 +44,10 @@ Rs2 113 111 25
 *.tran 1e-11 4e-9
 *.print tran V(102) V(103) V(112) V(113) V(154) V(164) V(107) I(Vdd)
 
-*.hb 100e6 50
-*.print hb V(102) V(103) V(112) V(113) V(154) V(164) I(Vdd).
+.hb 100e6 50
+.print hb V(102) V(103) V(112) V(113) V(154) V(164) I(Vdd)
 
-.shooting 
+*.shooting 
 
 *.dc
 .plotnv  102

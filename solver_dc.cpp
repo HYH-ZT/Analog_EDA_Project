@@ -199,7 +199,7 @@ void solver::DC_solve_ramp() {
 
 
 // 使用节点名和电压值的映射来设置初值
-
+//可能删除的版本
 void solver::DC_solve(const std::map<std::string, double>& node_voltage_map, bool in_tran) {
     const int maxNewtonIter = 500;
     const double tol = 1e-9;

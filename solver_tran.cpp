@@ -241,7 +241,7 @@ void solver::build_transient_ckt(double tstep){
 }
 
 //瞬态分析
-
+//好像没用到，可以删掉
 void solver::TRAN_solve(){
     //提取电容信息
     ckt.extract_MOS_capacitances();
@@ -534,39 +534,86 @@ void solver::TRAN_solve(double tstop, double tstep,int use_initial_dc){
 }
 
 
-//瞬态分析，初值可调节
+Eigen::MatrixXd solver::TRAN_solve_return(double tstop, double tstep,int use_initial_dc){
 
-void solver::TRAN_solve_with_initial_value(double tstop, double tstep){
-    int steps = static_cast<int>(tstop / tstep);
-    tran_plot_data.clear();
+    //初始化返回矩阵
+    int ori_node_size = ckt.node_map.size() - 1; //节点电压数量
+    // int steps = static_cast<int>(tstop / tstep);
+    int steps = static_cast<int>(std::round(tstop / tstep));
+    Eigen::MatrixXd results = Eigen::MatrixXd::Zero(base_size, steps + 1);
+    // std::cout << "Transient Analysis Results Matrix Size: " << results.rows() << " x " << results.cols() << "\n";
+    //先进行直流分析，获得初始条件
+    if(use_initial_dc == 2){
+        DC_solve();
+    }
+    else{
+        //零初值条件
+        node_voltages = Eigen::VectorXd::Zero(ckt.node_map.size() - 1);
+    }
+    // std::cout << "Initial Node Voltages for Transient Analysis:\n" << node_voltages << "\n";
     for (int step = 0; step <= steps; ++step){
         double time = step * tstep;
         // std::cout << "Transient Analysis Time: " << time << " s\n";
-
+        //构建瞬态分析电路
+        build_transient_ckt(tstep);
+        // std::cout << "Transient Circuit built for time " << time << " s\n";
         //直接调用DC求解器
         //求解非线性MNA方程，以上次节点电压为初值
         DC_solve(node_voltages, true, time);
+        // clear_transient_equiv_devices();
+        // std::cout << "Node Voltages at time " << time << " s:\n" << node_voltages << "\n";
+        //记录当前时刻的节点电压到返回矩阵
+        // std::cout << "node_map: " << ckt.node_map.size() << " \n";
+        for (int i = 0; i < ori_node_size; ++i){
+            // std::cout << i << ": " << node_voltages[i] << "\n";
+            results(i, step) = node_voltages(i);
+        }
+        // std::cout << "Branch Currents at time " << time << " s:\n";
+        // //电流节点也存入(还没有找到好方法存电流，因为瞬态的电路多了很多电压源，电流节点索引不对)
+        // for (int i = ckt.node_map.size() - 1; i < base_size; ++i){
+        //     results(i, step) = branch_currents[i - (ckt.node_map.size() - 1)];
+        // }
+        // std::cout << "complete" << "\n";
+    }   
 
-        //记录需要画图节点此时的电压
-        for (auto plot_node_id : ckt.plot_node_ids){
-            double v = 0.0;
-            if (plot_node_id == 0) v = 0.0;
-            else if (plot_node_id - 1 >= 0 && plot_node_id - 1 < node_voltages.size()) v = node_voltages[plot_node_id - 1];
-            tran_plot_data[plot_node_id].push_back(std::make_pair(time, v));
-            //输出调试信息
-            //std::cout << "Plot Data - Time: " << time << " s, Node ID: " << plot_node_id << ", Voltage: " << v << " V\n";
-        }
-        //记录需要画图的支路电流
-        for (auto plot_current_dev_index : ckt.plot_branch_current_indices){
-            if(plot_current_dev_index >=0 && plot_current_dev_index < ckt.sources.size()){
-                double i = branch_currents[plot_current_dev_index];
-                tran_plot_data[-(plot_current_dev_index+1)].push_back(std::make_pair(time, i));
-                // //输出调试信息
-                // std::cout << "save current index" <<plot_current_dev_index+1 << "\n";
-                //std::cout << "Plot Data - Time: " << time << " s, Branch Index: " << plot_current_dev_index << ", Current: " << i << " A\n";
-            }
-        }
-    }
+    // //Debug: 输出返回矩阵
+    // std::cout << "Transient Analysis Results Matrix:\n" << results << "\n";
+    return results;
 }
+
+//瞬态分析，初值可调节
+//好像没用到，可以删掉
+// void solver::TRAN_solve_with_initial_value(double tstop, double tstep){
+//     int steps = static_cast<int>(tstop / tstep);
+//     tran_plot_data.clear();
+//     for (int step = 0; step <= steps; ++step){
+//         double time = step * tstep;
+//         // std::cout << "Transient Analysis Time: " << time << " s\n";
+
+//         //直接调用DC求解器
+//         //求解非线性MNA方程，以上次节点电压为初值
+//         DC_solve(node_voltages, true, time);
+
+//         //记录需要画图节点此时的电压
+//         for (auto plot_node_id : ckt.plot_node_ids){
+//             double v = 0.0;
+//             if (plot_node_id == 0) v = 0.0;
+//             else if (plot_node_id - 1 >= 0 && plot_node_id - 1 < node_voltages.size()) v = node_voltages[plot_node_id - 1];
+//             tran_plot_data[plot_node_id].push_back(std::make_pair(time, v));
+//             //输出调试信息
+//             //std::cout << "Plot Data - Time: " << time << " s, Node ID: " << plot_node_id << ", Voltage: " << v << " V\n";
+//         }
+//         //记录需要画图的支路电流
+//         for (auto plot_current_dev_index : ckt.plot_branch_current_indices){
+//             if(plot_current_dev_index >=0 && plot_current_dev_index < ckt.sources.size()){
+//                 double i = branch_currents[plot_current_dev_index];
+//                 tran_plot_data[-(plot_current_dev_index+1)].push_back(std::make_pair(time, i));
+//                 // //输出调试信息
+//                 // std::cout << "save current index" <<plot_current_dev_index+1 << "\n";
+//                 //std::cout << "Plot Data - Time: " << time << " s, Branch Index: " << plot_current_dev_index << ", Current: " << i << " A\n";
+//             }
+//         }
+//     }
+// }
 
 // HB分析

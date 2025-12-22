@@ -637,7 +637,7 @@ void solver::hb_solve_linear_MNA(){
 
 //设置初始频域解
 
-void solver::HB_set_initial_xw(const std::map<std::string, double>& node_voltage_map){
+void solver::HB_set_initial_xw(){
     //运行一篇直流分析，得到base_size
     //先对直流点构建线性MNA矩阵
     build_linear_MNA(false);
@@ -649,25 +649,69 @@ void solver::HB_set_initial_xw(const std::map<std::string, double>& node_voltage
 
     int N = 2 * hb_params.num_harmonics + 1;
     hb_xw = Eigen::VectorXcd::Zero(base_size * N);
-    //遍历节点电压映射，设置初始频域解
-    for(const auto& pair : node_voltage_map){
-        const std::string& node_name = pair.first;
-        double voltage = pair.second;
-        //找到节点索引
-        int node_index = ckt.getNodeID(node_name);
-        if(node_index == -1){
-            std::cerr << "Warning: Node " << node_name << " not found in circuit. Skipping initial condition setting.\n";
-            continue;
-        }
-        //设置基频分量
-        hb_xw(node_index - 1 + (hb_params.num_harmonics - 1) * base_size) = std::complex<double>(voltage, 0.0);
-        hb_xw(node_index - 1 + (hb_params.num_harmonics + 1) * base_size) = std::complex<double>(voltage, 0.0);
-    }
 
     // //Debug: 输出初始频域解
     // std::cout << "Initial Harmonic Balance Frequency-Domain Solution (xw):\n" << hb_xw << "\n";
 }
 
+//先进行一次瞬态仿真，得到初始时域解，然后进行DFT变换得到频域解，来设定初始频域解
+void solver::HB_set_initial_xw_from_transient(){
+
+    //复制一份电路，因为瞬态仿真会修改器件参数
+    circuit original_ckt = ckt;
+
+    build_linear_MNA(false);
+    MNA_Y = Eigen::MatrixXd::Zero(liner_Y.rows(), liner_Y.cols());
+    MNA_Y = liner_Y;
+    build_sources_MNA();
+    //这样就得到的MNA_Y大小就是每个频率点的矩阵大小
+    base_size = MNA_Y.rows();
+
+    hb_initialize_DFT_matrices();
+
+    //根据谐波数量和基频，计算总仿真时间
+    double fundamental_period = 1.0 / (hb_params.fundamental_omega / (2.0 * M_PI));
+    double time_step = fundamental_period/(2 * hb_params.num_harmonics + 1); //和谐波分析采样点数相同
+    double total_time = fundamental_period-time_step; //仿真一个周期
+    //进行瞬态仿真
+    Eigen::MatrixXd transient_results = TRAN_solve_return(total_time, time_step, false);
+    //提取节点电压，进行DFT变换，得到频域解
+    int N = 2 * hb_params.num_harmonics + 1;
+    //初始化时域解向量
+    hb_xt = Eigen::VectorXcd::Zero(base_size * N);
+    hb_xw = Eigen::VectorXcd::Zero(base_size * N);
+    //提取返回的瞬态结果行数
+    int transient_rows = transient_results.rows();
+    int transient_cols = transient_results.cols();
+    // std::cout << "Transient simulation returned " << transient_rows << " nodes and " << transient_cols << " time points.\n";
+    // system("pause");
+    //遍历所有节点，提取时域电压
+    for(int n = 0; n < transient_rows; ++n){
+        // std::cout << n << "\n";
+        Eigen::VectorXcd V_time = Eigen::VectorXcd::Zero(N);
+        for(int t = 0; t < N; ++t){
+            V_time(t) = transient_results(n, t);
+        }
+        //将时域电压进行DFT变换，得到频域分量
+        Eigen::VectorXcd V_freq = hb_DFT_matrix*V_time;
+
+        //将频域分量加入到hb_xw中
+        for(int k = 0; k < N; ++k){
+            hb_xw(n + k * base_size) = V_freq(k);
+        }
+    }
+
+    //还原电路
+    ckt = original_ckt;
+    // HB_set_initial_xw({}); //先设置为空
+    build_linear_MNA(false);
+    MNA_Y = Eigen::MatrixXd::Zero(liner_Y.rows(), liner_Y.cols());
+    MNA_Y = liner_Y;
+    build_sources_MNA();
+    //这样就得到的MNA_Y大小就是每个频率点的矩阵大小
+    base_size = MNA_Y.rows();
+
+}
 
 void solver::PSS_solve_harmonic_balance(){
 
@@ -829,102 +873,116 @@ void solver::PSS_solve_harmonic_balance(){
 
     //打印需要打印的节点
         //根据需要打印的变量，存到文件中
-        {
-            // 输出文件: hb_print.txt
-                std::ofstream hdr("hb_print.txt", std::ios::out);
-                hdr << "Time(s)";
-                for (int node_id : ckt.print_node_ids) {
-                    std::string name = "NODE";
-                    if (node_id >= 0 && node_id < (int)ckt.node_list.size()) name = ckt.node_list[node_id];
-                    hdr << "\tV(" << name << ")";
-                }
-                // //只需要遍历所有sources，按顺序输出支路电流表头
-                for (const auto &d : ckt.sources){
-                    if (d.printI) hdr << "\tI(" << d.name << ")";
-                }
-                //关闭
-                hdr << "\n";
-                hdr.close();
+        // {
+        //     // 输出文件: hb_print.txt
+        //         std::ofstream hdr("hb_print.txt", std::ios::out);
+        //         hdr << "Time(s)";
+        //         for (int node_id : ckt.print_node_ids) {
+        //             std::string name = "NODE";
+        //             if (node_id >= 0 && node_id < (int)ckt.node_list.size()) name = ckt.node_list[node_id];
+        //             hdr << "\tV(" << name << ")";
+        //         }
+        //         // //只需要遍历所有sources，按顺序输出支路电流表头
+        //         for (const auto &d : ckt.sources){
+        //             if (d.printI) hdr << "\tI(" << d.name << ")";
+        //         }
+        //         //关闭
+        //         hdr << "\n";
+        //         hdr.close();
             
 
-            std::ofstream out("hb_print.txt", std::ios::app);
-            //遍历所有时域点，输出需要打印的节点电压和支路电流
-            int N = 2 * hb_params.num_harmonics + 1;
-            double T = 1.0 / (hb_params.fundamental_omega / (2.0 * M_PI)); //周期
-            double time = 0.0;
-            for(int n = 0; n < N; ++n){
-                time = n * T / N;
-                //提取节点电压
-                Eigen::VectorXd hb_node_voltages(ckt.node_list.size() -1);
-                for(int i = 0; i < (ckt.node_list.size() -1); ++i){
-                    hb_node_voltages(i) = hb_xt(i + n * base_size).real();
-                }
-                //1215提取支路电流
-                Eigen::VectorXd branch_currents(ckt.sources.size());
-                for(int i = 0; i < ckt.sources.size(); ++i){
-                    int branch_index = ckt.sources[i].branch_current_index + (ckt.node_list.size() -1);
-                    branch_currents(i) = hb_xt(branch_index + n * base_size).real();
-                }
-                out << time;
-                for (int node_id : ckt.print_node_ids) {
-                    double v = 0.0;
-                    if (node_id == 0) v = 0.0;
-                    else if (node_id - 1 >= 0 && node_id - 1 < hb_node_voltages.size()) v = hb_node_voltages[node_id - 1];
-                    out << "\t" << v;
-                }
-                out << "\n";
+        //     std::ofstream out("hb_print.txt", std::ios::app);
+        //     //遍历所有时域点，输出需要打印的节点电压和支路电流
+        //     int N = 2 * hb_params.num_harmonics + 1;
+        //     double T = 1.0 / (hb_params.fundamental_omega / (2.0 * M_PI)); //周期
+        //     double time = 0.0;
+        //     for(int n = 0; n < N; ++n){
+        //         time = n * T / N;
+        //         //提取节点电压
+        //         Eigen::VectorXd hb_node_voltages(ckt.node_list.size() -1);
+        //         for(int i = 0; i < (ckt.node_list.size() -1); ++i){
+        //             hb_node_voltages(i) = hb_xt(i + n * base_size).real();
+        //         }
+        //         //1215提取支路电流
+        //         Eigen::VectorXd branch_currents(ckt.sources.size());
+        //         for(int i = 0; i < ckt.sources.size(); ++i){
+        //             int branch_index = ckt.sources[i].branch_current_index + (ckt.node_list.size() -1);
+        //             branch_currents(i) = hb_xt(branch_index + n * base_size).real();
+        //         }
+        //         out << time;
+        //         for (int node_id : ckt.print_node_ids) {
+        //             double v = 0.0;
+        //             if (node_id == 0) v = 0.0;
+        //             else if (node_id - 1 >= 0 && node_id - 1 < hb_node_voltages.size()) v = hb_node_voltages[node_id - 1];
+        //             out << "\t" << v;
+        //         }
+        //         out << "\n";
 
-            //1215 电流
-            for (int current_dev_index : ckt.print_branch_current_indices) {
-                if(current_dev_index >=0 && current_dev_index < ckt.sources.size()){
-                    out << "\t" << branch_currents[current_dev_index];
-                }
-            }
-            }
+        //     //1215 电流
+        //     for (int current_dev_index : ckt.print_branch_current_indices) {
+        //         if(current_dev_index >=0 && current_dev_index < ckt.sources.size()){
+        //             out << "\t" << branch_currents[current_dev_index];
+        //         }
+        //     }
+        //     }
 
-            //打印频域结果
-            out << "\nFrequency Domain Results:\n";
-            out << "Harmonic\tFrequency(Hz)";
-            for (int node_id : ckt.print_node_ids) {
-                std::string name = "NODE";
-                if (node_id >= 0 && node_id < (int)ckt.node_list.size()) name = ckt.node_list[node_id];
-                out << "\tV(" << name << ")";
-            }
-            out << "\n";
-            for (int h = 0; h < N; ++h) {
-                Eigen::VectorXcd hb_node_vw(ckt.node_list.size() -1);
-                for(int i = 0; i < (ckt.node_list.size() -1); ++i){
-                    hb_node_vw(i) = hb_xw(i + h * base_size);
-                }
-                out << h - hb_params.num_harmonics << "\t" << ((h - hb_params.num_harmonics) * (hb_params.fundamental_omega / (2.0 * M_PI)));
-                for (int node_id : ckt.print_node_ids) {
-                    std::complex<double> v = 0.0;
-                    if (node_id == 0) v = 0.0;
-                    else if (node_id - 1 >= 0 && node_id - 1 < hb_xw.size()) v = hb_node_vw[node_id - 1];
-                    out << "\t" << v;
-                }
-                out << "\n";
-            }
+        //     //打印频域结果
+        //     out << "\nFrequency Domain Results:\n";
+        //     out << "Harmonic\tFrequency(Hz)";
+        //     for (int node_id : ckt.print_node_ids) {
+        //         std::string name = "NODE";
+        //         if (node_id >= 0 && node_id < (int)ckt.node_list.size()) name = ckt.node_list[node_id];
+        //         out << "\tV(" << name << ")";
+        //     }
+        //     out << "\n";
+        //     for (int h = 0; h < N; ++h) {
+        //         Eigen::VectorXcd hb_node_vw(ckt.node_list.size() -1);
+        //         for(int i = 0; i < (ckt.node_list.size() -1); ++i){
+        //             hb_node_vw(i) = hb_xw(i + h * base_size);
+        //         }
+        //         out << h - hb_params.num_harmonics << "\t" << ((h - hb_params.num_harmonics) * (hb_params.fundamental_omega / (2.0 * M_PI)));
+        //         for (int node_id : ckt.print_node_ids) {
+        //             std::complex<double> v = 0.0;
+        //             if (node_id == 0) v = 0.0;
+        //             else if (node_id - 1 >= 0 && node_id - 1 < hb_xw.size()) v = hb_node_vw[node_id - 1];
+        //             out << "\t" << v;
+        //         }
+        //         out << "\n";
+        //     }
 
-            out << "\n";
-            out.close();
-        }
+        //     out << "\n";
+        //     out.close();
+        // }
 }
 
 
-void solver::PSS_solve_harmonic_balance(analysis& analysis, int max_iters, double tol, double relaxation_factor){
+void solver::PSS_solve_harmonic_balance(analysis& analysis, int ic_choice, int max_iters, double tol){
+    //开始计时
+    auto start_time_pss = std::chrono::high_resolution_clock::now();
+    
     //根据网表设定参数
     hb_params.fundamental_omega = 2 * 3.14159265358979323846 * analysis.parameters["freq"]; // 基频角频率
     hb_params.num_harmonics = static_cast<int>(analysis.parameters["harm"]); // 谐波数量
     hb_params.max_iterations = max_iters; // 最大迭代次数
     hb_params.tolerance = tol; // 收敛容限
-    hb_params.relaxation_factor = relaxation_factor; // 松弛因子
     ckt.extract_MOS_capacitances(); //提取MOS管寄生电容
         //确定需要打印的节点
     parse_print_variables();
-    HB_set_initial_xw({}); //空参数表示使用默认初始解
+    if(ic_choice == 2){
+        //使用瞬态仿真结果作为初始解
+        HB_set_initial_xw_from_transient();
+    }
+    else{
+        //使用零初始解
+        HB_set_initial_xw(); //空参数表示使用默认初始解
+    }
     PSS_solve_harmonic_balance();
     std::cout << "Harmonic Balance Analysis Completed.\n";
+
+    //结束计时
+    auto end_time_pss = std::chrono::high_resolution_clock::now();
+    auto duration_pss = std::chrono::duration<double>(end_time_pss - start_time_pss).count();
+    std::cout << "Total Harmonic Balance Analysis Time: " << duration_pss << " seconds.\n";
 }
 
 

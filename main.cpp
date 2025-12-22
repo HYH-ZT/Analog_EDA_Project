@@ -200,7 +200,7 @@ int main(int argc, char* argv[]){
 
             //sol.TRAN_solve(tstop, tstep,ic_choice);
             //sol.TRAN_solve();
-            sol.TRAN_solve_new_new(tstop, tstep);
+            sol.TRAN_solve(tstop, tstep, ic_choice);
             cout << "Transient analysis completed.\n";
             // //打印要观察的节点电压时间序列
             // for (const auto& tran_plot_pair : sol.get_tran_plot_data()){
@@ -282,9 +282,15 @@ int main(int argc, char* argv[]){
             // plt::show();
         }
         else if (analysis.type == "HB"){
+            //询问使用0初值还是瞬态结果作为初值
+            cout << "Select initial condition for Harmonic Balance analysis:\n";
+            cout << "1. Zero Initial Condition\n";
+            cout << "2. Use Transient Analysis Result\n";
+            int ic_choice_hb;
+            cin >> ic_choice_hb;
             double freq = analysis.parameters.count("freq") ? analysis.parameters["freq"] : 1e3;
             double harm = analysis.parameters.count("harm") ? analysis.parameters["harm"] : 5;
-            sol.PSS_solve_harmonic_balance(analysis);
+            sol.PSS_solve_harmonic_balance(analysis,ic_choice_hb);
             //输出打印时域结果
             sol.print_hb_time_domain_results();
             cout << "\n";

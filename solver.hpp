@@ -33,7 +33,6 @@ class HB_params {
         int num_harmonics; // 谐波数量
         int max_iterations; // 最大迭代次数
         double tolerance; // 收敛容限
-        double relaxation_factor; // 松弛因子
         //初始频域解
         Eigen::VectorXcd initial_xw;
 };
@@ -120,7 +119,9 @@ class solver {
         //构建瞬态分析电路
         void build_transient_ckt(double tstep);
 
-        //HB相关函数
+        //===========================================
+        //Harmonic Balance专用变量与函数
+        //===========================================
         // int base_size;  //在build_linear_MNA中初始化，表示单频点矩阵大小
         void build_linear_MNA_frequency(Eigen::MatrixXcd& liner_Y_freq, double omega);
         void hb_build_linear_MNA();
@@ -196,6 +197,7 @@ class solver {
         void TRAN_solve(double tstop, double tstep,int use_initial_dc); 
         //
         void TRAN_solve_with_initial_value(double tstop, double tstep);   
+        Eigen::MatrixXd TRAN_solve_return(double tstop, double tstep,int use_initial_dc);
         //获取瞬态绘图数据
         const std::map<int, std::vector<std::pair<double, double>>>& get_tran_plot_data() const {
             return tran_plot_data;
@@ -204,30 +206,14 @@ class solver {
         //HB相关变量
         HB_params hb_params;
         //设置HB初始频域解
-        void HB_set_initial_xw(const std::map<std::string, double>& node_voltage_map);
+        void HB_set_initial_xw();
+        void HB_set_initial_xw_from_transient();
         void PSS_solve();
         void PSS_solve_harmonic_balance();
-        void PSS_solve_harmonic_balance(analysis& analysis, int max_iters = 50, double tol = 1e-6, double relaxation = 1.0);
+        void PSS_solve_harmonic_balance(analysis& analysis, int ic_choice, int max_iters = 50, double tol = 1e-6);
         void print_hb_time_domain_results();
         void print_hb_frequency_domain_results();
         void plot_hb_time_domain_results();
-
-        //神秘实验内容：主元最优置换
-    bool bfs_match(const std::vector<std::vector<int>>& graph, 
-                   std::vector<int>& pairU, 
-                   std::vector<int>& pairV, 
-                   std::vector<int>& dist, 
-                   int N);
-
-    bool dfs_match(int u, const std::vector<std::vector<int>>& graph,
-                   std::vector<int>& pairU, std::vector<int>& pairV,
-                   std::vector<int>& dist);
-
-    std::vector<int> hungarianMatch(const Eigen::MatrixXd& matrix);
-    Eigen::MatrixXd diagMax();
-    static Eigen::VectorXd restoreOrder(const Eigen::VectorXd& solution, 
-                                        const Eigen::MatrixXd& inversePerm);
-    int checkDiagonalDominance(double threshold = 1e-6) const ;
 
 
     //============================================
