@@ -57,7 +57,7 @@ int main_new_shooting_test(){
 
     double period_T = 1.0 / freq;
     double tstep = period_T / N_sample; //默认时间步长为周期的1/1000
-    sol.PSS_solve_shooting_new_new(period_T, tstep, 100, 1e-9);
+    sol.PSS_solve_shooting_trapezoidal(period_T, tstep, 100, 1e-9);
 
     // double tstep = analyses[0].parameters.at("tstep");
     // double tstop = analyses[0].parameters.at("tstop");

@@ -403,7 +403,7 @@ int main(int argc, char* argv[]){
             cin >> method_choice;
             switch (method_choice){
                 case 1:
-                    sol.PSS_solve_shooting_new_new(period_T, tstep, 100, 1e-9);
+                    sol.PSS_solve_shooting_trapezoidal(period_T, tstep, 100, 1e-9);
                     break;
                 case 2:
                     sol.PSS_solve_shooting_backward_euler(period_T, tstep, 100, 1e-9);
@@ -415,7 +415,6 @@ int main(int argc, char* argv[]){
                     cout << "Invalid choice, using LU Decomposition by default.\n";
                     sol.setLinearSolverMethod(LinearSolverMethod::LU_DECOMPOSITION);
             }
-            //sol.PSS_solve_shooting_exact_jacobian(period_T, tstep);
 
             // // Debug: 输出要plot的节点ID
             // cout << "Nodes to plot:\n";

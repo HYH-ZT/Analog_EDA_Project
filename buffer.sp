@@ -19,8 +19,8 @@ C3 118 0 1e-12
 .MODEL 1 VT -0.75 MU 5e-2 COX 0.3e-4 LAMBDA 0.05 CJ0 4.0e-14
 .MODEL 2 VT 0.83 MU 1.5e-1 COX 0.3e-4 LAMBDA 0.05 CJ0 4.0e-14
 
-.dc
-*.shooting 10e6
+*.dc
+.shooting 10e6
 *.hb 10e6 50
 *.tran 5e-10 5e-7
 .PLOTNV 101

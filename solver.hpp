@@ -151,6 +151,11 @@ class solver {
         std::vector<InductorState> ind_states_BE;
         std::vector<InductorSkeleton> ind_skeletons_BE;
 
+        // Common helpers shared by TR/BE shooting workflows
+        Eigen::VectorXd propagate_one_period_common(const Eigen::VectorXd& x0, double T, double tstep, bool use_be);
+        Eigen::VectorXd compute_x0_by_prerun_common(double T, double tstep, int N_pre_cycles, bool use_be);
+        void run_transient_and_record_common(double T, double tstep, const Eigen::VectorXd& x0_star, bool use_be);
+
     public:
         Eigen::VectorXcd hb_xt;
         int base_size; //基频点矩阵大小
@@ -201,10 +206,6 @@ class solver {
         //设置HB初始频域解
         void HB_set_initial_xw(const std::map<std::string, double>& node_voltage_map);
         void PSS_solve();
-        std::pair<Eigen::VectorXd, Eigen::VectorXd> run_transient_once(double T, double tstep, const Eigen::VectorXd& init_V, const Eigen::VectorXd& init_I);
-        void PSS_solve_shooting(double period_T, double tstep, int max_iters = 200, double tol = 1e-6);
-        void PSS_solve_shooting_new(double period_T, double tstep, int max_iters = 200, double tol = 1e-6);
-        void PSS_solve_shooting_exact_jacobian(double period_T, double tstep, int max_iters = 200, double tol = 1e-6);
         void PSS_solve_harmonic_balance();
         void PSS_solve_harmonic_balance(analysis& analysis, int max_iters = 50, double tol = 1e-6, double relaxation = 1.0);
         void print_hb_time_domain_results();
@@ -232,24 +233,23 @@ class solver {
     //============================================
     //shooting method专用函数
     //============================================
-    void PSS_solve_shooting_new_new(double T, double tstep, int max_it = 100, double tol = 1e-8);
+    void PSS_solve_shooting_trapezoidal(double T, double tstep, int max_it = 100, double tol = 1e-8);
     void PSS_solve_shooting_backward_euler(double T, double tstep, int max_it = 100, double tol = 1e-8);
     void PSS_solve_shooting_backward_euler_sensitivity(double T, double tstep, int max_it = 100, double tol = 1e-8);
-    void compute_shooting_jacobian(const Eigen::VectorXd& X0, Eigen::MatrixXd& J, double period_T, double tstep);
-    void TRAN_solve_for_shooting(double tstop, double tstep);
-    void transient_step(double time);
+    void TRAN_solve_for_shooting_tr(double tstop, double tstep);
+    void transient_step_tr(double time);
 
-    void init_skeleton(double tstep);
-    void init_transient();
+    void init_skeleton_tr(double tstep);
+    void init_transient_tr();
 
-    void update_capacitor_rhs();
-    void update_capacitor_state();
+    void update_capacitor_rhs_tr();
+    void update_capacitor_state_tr();
 
-    void update_inductor_rhs();
-    void update_inductor_state();
+    void update_inductor_rhs_tr();
+    void update_inductor_state_tr();
 
-    void reset_dynamic_state();
-    void set_state_from_x0(const Eigen::VectorXd& x0);
+    void reset_dynamic_state_tr();
+    void set_state_from_x0_tr(const Eigen::VectorXd& x0);
 
     void TRAN_solve_new_new(double tstop, double tstep);    //测试瞬态
     void DC_solve_new(double time);
@@ -259,10 +259,10 @@ class solver {
     void stamp_nonlinear_devices();
     void stamp_independent_sources(double time);
 
-    Eigen::VectorXd propagate_one_period(const Eigen::VectorXd& x0, double T, double tstep);
-    void run_transient_and_record(double T, double tstep, const Eigen::VectorXd& x0_star);
+    Eigen::VectorXd propagate_one_period_tr(const Eigen::VectorXd& x0, double T, double tstep);
+    void run_transient_and_record_tr(double T, double tstep, const Eigen::VectorXd& x0_star);
 
-    Eigen::VectorXd compute_x0_by_prerun_TR(double T, double tstep, int N_pre_cycles);
+    Eigen::VectorXd compute_x0_by_prerun_tr(double T, double tstep, int N_pre_cycles);
 
     // Backward-Euler shooting (fast skeleton version)
     void init_skeleton_BE(double tstep);
