@@ -2,6 +2,11 @@
 #include "circuit.hpp"
 #include "parse_netlist.hpp"
 #include <Eigen/Dense>
+#include <vector>
+
+bool gcd_fundamental_freq(const std::vector<double>& freqs,
+                          double& f0_out,
+                          double tol = 1e-9);
 
 // 线性方程求解方法枚举
 enum class LinearSolverMethod {

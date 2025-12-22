@@ -3,15 +3,76 @@
 #include <algorithm>
 #include <cmath>
 #include <iostream>
+#include <numeric>
 #include <stdexcept>
 #include <vector>
+static bool almost_integer(double x, double tol = 1e-9) {
+    return std::fabs(x - std::llround(x)) <= tol;
+}
 
+// 将一组 double 频率近似转成整数并求 gcd，返回基频（Hz）。
+// 思路：找一个 scale，使得 fi * scale 都“足够接近整数”；再对整数 gcd。
+bool gcd_fundamental_freq(const std::vector<double>& freqs,
+                          double& f0_out,
+                          double tol)
+{
+    if (freqs.empty()) return false;
 
+    // 过滤非正数，避免异常
+    std::vector<double> f;
+    f.reserve(freqs.size());
+    for (double x : freqs) {
+        if (x > 0.0 && std::isfinite(x)) f.push_back(x);
+    }
+    if (f.empty()) return false;
 
+    // 尝试 1, 10, 100, ... 1e12 的 scale，使 fi*scale 都接近整数
+    // 1e12 对应皮赫兹分辨率；一般电路作业足够用
+    const long long scale_candidates[] = {
+        1LL, 10LL, 100LL, 1000LL, 10000LL, 100000LL,
+        1000000LL, 10000000LL, 100000000LL, 1000000000LL,
+        10000000000LL, 100000000000LL, 1000000000000LL
+    };
 
+    long long scale = 0;
+    for (long long s : scale_candidates) {
+        bool ok = true;
+        for (double fi : f) {
+            double x = fi * static_cast<double>(s);
+            if (!almost_integer(x, tol * static_cast<double>(s))) { // 随 scale 放宽一点
+                ok = false;
+                break;
+            }
+        }
+        if (ok) {
+            scale = s;
+            break;
+        }
+    }
 
+    // 如果找不到合适 scale，就退化为“微赫兹量化”（仍然比随便选一个源强）
+    if (scale == 0) {
+        scale = 1000000LL; // 1e-6 Hz 分辨率
+    }
 
+    // 转整数并 gcd
+    long long g = 0;
+    for (double fi : f) {
+        // 注意溢出风险：若频率特别大，可改用 long double 或更小 scale
+        long long vi = static_cast<long long>(std::llround(fi * static_cast<double>(scale)));
+        if (vi <= 0) continue;
+        g = (g == 0) ? vi : std::gcd(g, vi);
+        if (g == 1) {
+            // gcd 已经为 1（在该 scale 下），可以提前结束
+            // 但仍可继续；这里提前结束可省时间
+        }
+    }
 
+    if (g <= 0) return false;
+
+    f0_out = static_cast<double>(g) / static_cast<double>(scale);
+    return (f0_out > 0.0 && std::isfinite(f0_out));
+}
 
 
 //==================================================
