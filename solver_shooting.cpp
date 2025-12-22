@@ -174,7 +174,7 @@ void solver::transient_step_tr(double time){
     update_inductor_rhs_tr();
 
     // (2) 解一次“静态拓扑 + 当前 RHS”的非线性 MNA
-    DC_solve_new(time);
+    DC_solve(node_voltages, true, time);
 
     // (3) 从解中提取新的状态，供下一步使用
     update_capacitor_state_tr();
@@ -192,7 +192,7 @@ void solver::TRAN_solve_new_new(double tstop, double tstep){
     update_capacitor_rhs_tr();
     update_inductor_rhs_tr();
 
-    DC_solve_new(0.0);
+    DC_solve(node_voltages, true, 0.0);
 
     init_transient_tr();
 
@@ -263,11 +263,6 @@ void solver::init_transient_tr()
     update_capacitor_rhs_tr();
     update_inductor_rhs_tr();
 }
-
-
-//计算Jacobian
-
-
 
 //外层调用函数
 
@@ -365,56 +360,6 @@ void solver::run_transient_and_record_tr(double T, double tstep, const Eigen::Ve
 }
 
 
-void solver::DC_solve_new(double time) {
-    const int max_iter = 1000;
-    const double tol = 1e-9;
-    const int node_count = static_cast<int>(ckt.node_list.size()) - 1;
-
-    if (node_count <= 0) {
-        return;
-    }
-
-    if (node_voltages.size() != node_count) {
-        node_voltages = Eigen::VectorXd::Zero(node_count);
-    }
-
-    for (int iter = 0; iter < max_iter; ++iter) {
-        Eigen::VectorXd prev = node_voltages;
-
-        if ((int)node_voltages.size() != node_count) {
-            std::cerr << "[WARN] node_voltages.size=" << node_voltages.size()
-                    << " node_count=" << node_count << " (resizing)\n";
-            node_voltages.conservativeResize(node_count);
-            node_voltages.setZero();
-        }
-        build_MNA_tran(time);
-        if ((int)node_voltages.size() != node_count) {
-            std::cerr << "[WARN] node_voltages.size=" << node_voltages.size()
-                    << " node_count=" << node_count << " (resizing)\n";
-            node_voltages.conservativeResize(node_count);
-            node_voltages.setZero();
-        }
-
-        // Solve the linearized MNA system for this Newton step.
-        Eigen::PartialPivLU<Eigen::MatrixXd> lu(MNA_Y);
-        Eigen::VectorXd solution = lu.solve(J);
-
-        // Update node voltages and branch currents from the solution vector.
-        node_voltages = solution.head(node_count);
-        if (solution.size() > node_count) {
-            branch_currents = solution.tail(solution.size() - node_count);
-        } else {
-            branch_currents.resize(0);
-        }
-
-        double max_diff = (node_voltages - prev).cwiseAbs().maxCoeff();
-        if (max_diff < tol) {
-            return;
-        }
-    }
-
-    //std::cerr << "Warning: DC_solve_new did not converge\n";
-}
 
 
 void solver::build_MNA_tran(double time){
@@ -677,7 +622,7 @@ Eigen::VectorXd solver::compute_x0_by_prerun_common(double T, double tstep, int 
         update_inductor_rhs_tr();
     }
 
-    DC_solve_new(0.0);
+    DC_solve(node_voltages, true, 0.0);
 
     if (use_be) {
         init_transient_BE();
@@ -943,7 +888,7 @@ void solver::transient_step_BE(double time)
     update_capacitor_rhs_BE();
     update_inductor_rhs_BE();
 
-    DC_solve_new(time);
+    DC_solve(node_voltages, true, time);
 
     update_capacitor_state_BE();
     update_inductor_state_BE();

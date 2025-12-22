@@ -252,7 +252,6 @@ class solver {
     void set_state_from_x0_tr(const Eigen::VectorXd& x0);
 
     void TRAN_solve_new_new(double tstop, double tstep);    //测试瞬态
-    void DC_solve_new(double time);
     void build_MNA_tran(double time);
 
     void stamp_linear_devices();
