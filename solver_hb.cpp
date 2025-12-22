@@ -6,6 +6,68 @@
 #include <fstream>
 #include <iostream>
 #include <string>
+#include <utility>
+
+namespace {
+Eigen::VectorXcd solve_lu_partial_pivot(const Eigen::MatrixXcd& A, const Eigen::VectorXcd& b){
+    const int n = A.rows();
+    Eigen::MatrixXcd lu = A;
+    Eigen::VectorXi piv(n);
+    for(int i = 0; i < n; ++i){
+        piv(i) = i;
+    }
+
+    for(int k = 0; k < n; ++k){
+        int pivot_row = k;
+        double max_abs = 0.0;
+        for(int i = k; i < n; ++i){
+            double val = std::abs(lu(i, k));
+            if(val > max_abs){
+                max_abs = val;
+                pivot_row = i;
+            }
+        }
+        if(max_abs == 0.0){
+            return Eigen::VectorXcd::Zero(n);
+        }
+        if(pivot_row != k){
+            lu.row(k).swap(lu.row(pivot_row));
+            std::swap(piv(k), piv(pivot_row));
+        }
+        const std::complex<double> pivot = lu(k, k);
+        for(int i = k + 1; i < n; ++i){
+            lu(i, k) /= pivot;
+            for(int j = k + 1; j < n; ++j){
+                lu(i, j) -= lu(i, k) * lu(k, j);
+            }
+        }
+    }
+
+    Eigen::VectorXcd pb(n);
+    for(int i = 0; i < n; ++i){
+        pb(i) = b(piv(i));
+    }
+
+    Eigen::VectorXcd y(n);
+    for(int i = 0; i < n; ++i){
+        std::complex<double> sum = pb(i);
+        for(int j = 0; j < i; ++j){
+            sum -= lu(i, j) * y(j);
+        }
+        y(i) = sum;
+    }
+
+    Eigen::VectorXcd x(n);
+    for(int i = n - 1; i >= 0; --i){
+        std::complex<double> sum = y(i);
+        for(int j = i + 1; j < n; ++j){
+            sum -= lu(i, j) * x(j);
+        }
+        x(i) = sum / lu(i, i);
+    }
+    return x;
+}
+}
 
 void solver::hb_build_linear_MNA(){
     //先对直流点构建线性MNA矩阵,只能进行一次，电感会贴出来很多个电压源
@@ -625,7 +687,13 @@ void solver::hb_build_nonlinear_MNA(){
 
 void solver::hb_solve_linear_MNA(){
     //求解多频率点的线性MNA方程
-    Eigen::VectorXcd hb_x = hb_MNA_Y.fullPivLu().solve(hb_J);
+    Eigen::VectorXcd hb_x;
+    if (hb_params.hb_solver_method == HBLinearSolverMethod::MANUAL_LU) {
+        hb_x = solve_lu_partial_pivot(hb_MNA_Y, hb_J);
+    } else {
+        Eigen::PartialPivLU<Eigen::MatrixXcd> lu(hb_MNA_Y);
+        hb_x = lu.solve(hb_J);
+    }
     // //Debug: 输出多频率点的解向量
     // std::cout << "Harmonic Balance Linear MNA Solution (x):\n" << hb_x << "\n";
     //进行IDFT变换，得到时域解
@@ -790,11 +858,14 @@ void solver::PSS_solve_harmonic_balance(){
     auto start_solveMNA = std::chrono::high_resolution_clock::now();
     
     // Eigen::VectorXcd delta_xw = hb_jacobian.fullPivLu().solve(delta_F);
-    //使用Eigen的LU分解求解器
-    Eigen::PartialPivLU<Eigen::MatrixXcd> lu(hb_jacobian);
-    
-    //求解线性方程组 MNA_Y * x = J
-    Eigen::VectorXcd delta_xw = lu.solve(delta_F);
+    //根据HB求解器设置选择LU实现
+    Eigen::VectorXcd delta_xw;
+    if (hb_params.hb_solver_method == HBLinearSolverMethod::MANUAL_LU) {
+        delta_xw = solve_lu_partial_pivot(hb_jacobian, delta_F);
+    } else {
+        Eigen::PartialPivLU<Eigen::MatrixXcd> lu(hb_jacobian);
+        delta_xw = lu.solve(delta_F);
+    }
 
     // Debug 或者直接获取秒
     // 结束时间点

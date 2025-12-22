@@ -26,6 +26,12 @@ enum class SteadyStateMethod {
     //CONTINUATION = 2        // 延拓法 这是啥
 };
 
+// HB求解器选择
+enum class HBLinearSolverMethod {
+    EIGEN_LU = 0,
+    MANUAL_LU = 1
+};
+
 //HB相关参数
 class HB_params {
     public:
@@ -33,6 +39,7 @@ class HB_params {
         int num_harmonics; // 谐波数量
         int max_iterations; // 最大迭代次数
         double tolerance; // 收敛容限
+        HBLinearSolverMethod hb_solver_method; // HB线性求解方法
         //初始频域解
         Eigen::VectorXcd initial_xw;
 };
@@ -180,11 +187,13 @@ class solver {
         void setLinearSolverMethod(LinearSolverMethod method) { linear_solver_method = method; }
         void setTransientMethod(TransientMethod method) { transient_method = method; }
         void setSteadyStateMethod(SteadyStateMethod method) { steady_state_method = method; }
+        void setHBLinearSolverMethod(HBLinearSolverMethod method) { hb_params.hb_solver_method = method; }
         
         // 获取当前求解方法
         LinearSolverMethod getLinearSolverMethod() const { return linear_solver_method; }
         TransientMethod getTransientMethod() const { return transient_method; }
         SteadyStateMethod getSteadyStateMethod() const { return steady_state_method; }
+        HBLinearSolverMethod getHBLinearSolverMethod() const { return hb_params.hb_solver_method; }
         
         //直流分析
         void DC_solve();    //默认初值为0

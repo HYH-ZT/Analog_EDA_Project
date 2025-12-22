@@ -13,6 +13,7 @@ solver::solver(circuit& ckt_, analysis& analysis_,
     liner_Y.setZero();
     J.resize(ckt.node_map.size() - 1);
     J.setZero();
+    hb_params.hb_solver_method = HBLinearSolverMethod::EIGEN_LU;
     
     // // 设置默认求解方法
     // linear_solver_method = LinearSolverMethod::LU_DECOMPOSITION;

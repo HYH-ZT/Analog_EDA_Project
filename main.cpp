@@ -288,6 +288,23 @@ int main(int argc, char* argv[]){
             cout << "2. Use Transient Analysis Result\n";
             int ic_choice_hb;
             cin >> ic_choice_hb;
+            //选择HB线性方程求解器
+            cout << "Select HB linear solver:\n";
+            cout << "1. Eigen LU (library)\n";
+            cout << "2. Manual LU\n";
+            int hb_solver_choice;
+            cin >> hb_solver_choice;
+            switch (hb_solver_choice){
+                case 1:
+                    sol.setHBLinearSolverMethod(HBLinearSolverMethod::EIGEN_LU);
+                    break;
+                case 2:
+                    sol.setHBLinearSolverMethod(HBLinearSolverMethod::MANUAL_LU);
+                    break;
+                default:
+                    cout << "Invalid choice, using Eigen LU by default.\n";
+                    sol.setHBLinearSolverMethod(HBLinearSolverMethod::EIGEN_LU);
+            }
             double freq = analysis.parameters.count("freq") ? analysis.parameters["freq"] : 1e3;
             double harm = analysis.parameters.count("harm") ? analysis.parameters["harm"] : 5;
             sol.PSS_solve_harmonic_balance(analysis,ic_choice_hb);
