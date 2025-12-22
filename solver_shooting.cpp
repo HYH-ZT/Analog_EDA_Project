@@ -353,6 +353,180 @@ void solver::PSS_solve_shooting_trapezoidal(double T, double tstep, int max_it, 
 }
 
 
+void solver::PSS_solve_shooting_trapezoidal_sensitivity(double T, double tstep, int max_it, double tol)
+{
+    parse_print_variables();
+
+    init_skeleton_tr(tstep);
+
+    const int node_count = (int)ckt.node_list.size() - 1;
+    node_voltages = Eigen::VectorXd::Zero(std::max(0, node_count));
+    branch_currents.resize(0);
+
+    init_transient_tr();
+
+    const int m = (int)cap_states.size();
+    const int n = (int)ind_states.size();
+    const int N = m + n;
+
+    int N_pre_cycles = 3;
+    Eigen::VectorXd x0 = compute_x0_by_prerun_tr(T, tstep, N_pre_cycles);
+
+    if (N == 0) {
+        run_transient_and_record_tr(T, tstep, x0);
+        return;
+    }
+
+    int steps = (int)std::round(T / tstep);
+    if (steps < 1) steps = 1;
+
+    using RowMajorMat = Eigen::Matrix<double, Eigen::Dynamic, Eigen::Dynamic, Eigen::RowMajor>;
+
+    Eigen::MatrixXd dJ_dx0;
+    Eigen::MatrixXd dsol_dx0;
+    const Eigen::MatrixXd I = Eigen::MatrixXd::Identity(N, N);
+
+    const int max_iter_dc = 100;
+    const double tol_dc = 1e-9;
+
+    auto dc_solve_with_sens = [&](double time,
+                                  const RowMajorMat& S,
+                                  const RowMajorMat& SiC,
+                                  const RowMajorMat& SvL,
+                                  Eigen::MatrixXd& dsol_out) -> bool {
+        if (node_count <= 0) return true;
+
+        if (node_voltages.size() != node_count) {
+            node_voltages = Eigen::VectorXd::Zero(node_count);
+        }
+
+        for (int iter = 0; iter < max_iter_dc; ++iter) {
+            Eigen::VectorXd prev = node_voltages;
+
+            build_MNA_tran(time);
+
+            Eigen::PartialPivLU<Eigen::MatrixXd> lu(MNA_Y);
+            Eigen::VectorXd solution = lu.solve(J);
+
+            node_voltages = solution.head(node_count);
+            if (solution.size() > node_count) {
+                branch_currents = solution.tail(solution.size() - node_count);
+            } else {
+                branch_currents.resize(0);
+            }
+
+            double max_diff = (node_voltages - prev).cwiseAbs().maxCoeff();
+            if (max_diff < tol_dc) {
+                const int M = (int)solution.size();
+                if (dJ_dx0.rows() != M || dJ_dx0.cols() != N) {
+                    dJ_dx0.resize(M, N);
+                }
+                dJ_dx0.setZero();
+
+                for (int k = 0; k < m; ++k) {
+                    const auto& sk = cap_skeletons[k];
+                    const int src_idx = sk.veq_index;
+                    const int bc_idx = ckt.sources[src_idx].branch_current_index;
+                    const int row = node_count + bc_idx;
+                    if (row >= 0 && row < M) {
+                        dJ_dx0.row(row) = S.row(k) + sk.Req * SiC.row(k);
+                    }
+                }
+
+                for (int k = 0; k < n; ++k) {
+                    const auto& sk = ind_skeletons[k];
+                    const int idx = m + k;
+                    Eigen::RowVectorXd dIeq = S.row(idx);
+                    if (sk.Req != 0.0) {
+                        dIeq += SvL.row(k) * (1.0 / sk.Req);
+                    }
+                    if (sk.n1 != 0) dJ_dx0.row(sk.n1 - 1) -= dIeq;
+                    if (sk.n2 != 0) dJ_dx0.row(sk.n2 - 1) += dIeq;
+                }
+
+                dsol_out = lu.solve(dJ_dx0);
+                return true;
+            }
+        }
+
+        std::cerr << "[shooting-TR-sens] WARNING: DC solve did not converge at t=" << time << "\n";
+        return false;
+    };
+
+    for (int it = 0; it < max_it; ++it) {
+        node_voltages.setZero();
+        branch_currents.setZero();
+        set_state_from_x0_tr(x0);
+
+        RowMajorMat S = RowMajorMat::Identity(N, N);
+        RowMajorMat SiC = RowMajorMat::Zero(m, N);
+        RowMajorMat SvL = RowMajorMat::Zero(n, N);
+
+        for (int s = 0; s <= steps; ++s) {
+            double t = s * tstep;
+
+            update_capacitor_rhs_tr();
+            update_inductor_rhs_tr();
+
+            if (!dc_solve_with_sens(t, S, SiC, SvL, dsol_dx0)) {
+                break;
+            }
+
+            for (int k = 0; k < m; ++k) {
+                const auto& sk = cap_skeletons[k];
+                S.row(k).setZero();
+                if (sk.n1 != 0) S.row(k) += dsol_dx0.row(sk.n1 - 1);
+                if (sk.n2 != 0) S.row(k) -= dsol_dx0.row(sk.n2 - 1);
+
+                SiC.row(k).setZero();
+                if (sk.Req != 0.0) {
+                    const double invReq = 1.0 / sk.Req;
+                    if (sk.n1 != 0) SiC.row(k) += dsol_dx0.row(sk.n1 - 1) * invReq;
+                    if (sk.mid != 0) SiC.row(k) -= dsol_dx0.row(sk.mid - 1) * invReq;
+                }
+            }
+
+            for (int k = 0; k < n; ++k) {
+                const auto& sk = ind_skeletons[k];
+
+                Eigen::RowVectorXd SvL_prev = SvL.row(k);
+                SvL.row(k).setZero();
+                if (sk.n1 != 0) SvL.row(k) += dsol_dx0.row(sk.n1 - 1);
+                if (sk.n2 != 0) SvL.row(k) -= dsol_dx0.row(sk.n2 - 1);
+
+                if (sk.Req != 0.0) {
+                    const double invReq = 1.0 / sk.Req;
+                    S.row(m + k) += (SvL_prev + SvL.row(k)) * invReq;
+                }
+            }
+
+            update_capacitor_state_tr();
+            update_inductor_state_tr();
+        }
+
+        Eigen::VectorXd xT(N);
+        for (int k = 0; k < m; ++k) xT[k] = cap_states[k].v_prev;
+        for (int k = 0; k < n; ++k) xT[m + k] = ind_states[k].i_prev;
+
+        Eigen::VectorXd F = xT - x0;
+        double nF = F.norm();
+        std::cerr << "[shooting-TR-sens] it=" << it << " |F|=" << nF << "\n";
+
+        if (nF < tol) {
+            std::cerr << "[shooting-TR-sens] converged.\n";
+            run_transient_and_record_tr(T, tstep, x0);
+            return;
+        }
+
+        Eigen::MatrixXd JF = S - I;
+        Eigen::VectorXd dx = JF.partialPivLu().solve(-F);
+        x0 += dx;
+    }
+
+    std::cerr << "[shooting-TR-sens] WARNING: did not converge in " << max_it << " iterations\n";
+    run_transient_and_record_tr(T, tstep, x0);
+}
+
 
 void solver::run_transient_and_record_tr(double T, double tstep, const Eigen::VectorXd& x0_star)
 {

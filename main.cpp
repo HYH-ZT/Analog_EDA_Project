@@ -399,6 +399,7 @@ int main(int argc, char* argv[]){
             cout << "1. TR\n";
             cout << "2. BE\n";
             cout << "3. BE_sensitivity\n";
+            cout << "4. TR_sensitivity\n";
             int method_choice;
             cin >> method_choice;
             switch (method_choice){
@@ -410,6 +411,9 @@ int main(int argc, char* argv[]){
                     break;
                 case 3:
                     sol.PSS_solve_shooting_backward_euler_sensitivity(period_T, tstep, 100, 1e-9);
+                    break;
+                case 4:
+                    sol.PSS_solve_shooting_trapezoidal_sensitivity(period_T, tstep, 100, 1e-9);
                     break;
                 default:
                     cout << "Invalid choice, using LU Decomposition by default.\n";

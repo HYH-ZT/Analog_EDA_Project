@@ -234,6 +234,7 @@ class solver {
     //shooting method专用函数
     //============================================
     void PSS_solve_shooting_trapezoidal(double T, double tstep, int max_it = 100, double tol = 1e-8);
+    void PSS_solve_shooting_trapezoidal_sensitivity(double T, double tstep, int max_it = 100, double tol = 1e-8);
     void PSS_solve_shooting_backward_euler(double T, double tstep, int max_it = 100, double tol = 1e-8);
     void PSS_solve_shooting_backward_euler_sensitivity(double T, double tstep, int max_it = 100, double tol = 1e-8);
     void TRAN_solve_for_shooting_tr(double tstop, double tstep);
