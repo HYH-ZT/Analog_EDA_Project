@@ -174,6 +174,23 @@ void solver::parse_print_variables() {
 }
 
 //高斯消去法线性MNA方程求解
+void solver::store_linear_solution(const Eigen::VectorXd& x) {
+    const int node_count = (int)ckt.node_map.size() - 1;
+    node_voltages.resize(std::max(0, node_count));
+    for (int i = 0; i < std::min(node_count, (int)x.size()); ++i) {
+        node_voltages[i] = x(i);
+    }
+
+    if (x.size() > node_count) {
+        branch_currents.resize(x.size() - node_count);
+        for (int i = node_count; i < x.size(); ++i) {
+            branch_currents[i - node_count] = x(i);
+        }
+    } else {
+        branch_currents.resize(0);
+    }
+}
+
 void solver::solve_linear_MNA_Gauss(){
     // //展示MNA矩阵和J向量
     // std::cout << "MNA Matrix:\n" << MNA_Y << "\n";
@@ -214,21 +231,9 @@ void solver::solve_linear_MNA_Gauss(){
         x(i) = sum / MNA_Y(i, i);
     }
     //存储节点电压结果
-    node_voltages.resize(ckt.node_map.size() - 1);
-    for (int i = 0; i < ckt.node_map.size() - 1; ++i){
-        node_voltages[i] = x(i);
-    }
+    store_linear_solution(x);
     //如果有额外的变量（如支路电流），也存储起来
-    if (x.size() > ckt.node_map.size() - 1) {
-        branch_currents.resize(x.size() - (ckt.node_map.size() - 1));
-        for (int i = ckt.node_map.size() - 1; i < x.size(); ++i) {
-            branch_currents[i - (ckt.node_map.size() - 1)] = x(i);
-        }
-        // std::cout << "Branch Currents:\n";
-        // for (int i = 0; i < branch_currents.size(); ++i) {
-        //     std::cout << "I" << i << ": " << branch_currents[i] << " A\n";
-        // }
-    }
+    // branch_currents are handled inside store_linear_solution
 }
 
 //LU分解法求解MNA方程
@@ -259,22 +264,10 @@ void solver::solve_linear_MNA_LU(){
     // std::cout << "LU Decomposition Relative Error: " << relative_error << "\n";
     
     //存储节点电压结果
-    node_voltages.resize(ckt.node_map.size() - 1);
-    for (int i = 0; i < std::min((int)(ckt.node_map.size() - 1), (int)x.size()); ++i){
-        node_voltages[i] = x(i);
-    }
+    store_linear_solution(x);
     
     //如果有额外的变量（如支路电流），也存储起来
-    if (x.size() > ckt.node_map.size() - 1) {
-        branch_currents.resize(x.size() - (ckt.node_map.size() - 1));
-        for (int i = ckt.node_map.size() - 1; i < x.size(); ++i) {
-            branch_currents[i - (ckt.node_map.size() - 1)] = x(i);
-        }
-        // std::cout << "Branch Currents:\n";
-        // for (int i = 0; i < branch_currents.size(); ++i) {
-        //     std::cout << "I" << i << ": " << branch_currents[i] << " A\n";
-        // }
-    }
+    // branch_currents are handled inside store_linear_solution
 }
 
 //完整LU分解法（手动实现）
@@ -420,10 +413,7 @@ void solver::solve_with_LU_matrices(){
     // std::cout << "Residual norm ||MNA_Y*x - J||: " << residual_norm << "\n";
     
     //存储节点电压结果
-    node_voltages.resize(std::min((int)(ckt.node_map.size() - 1), (int)x.size()));
-    for (int i = 0; i < node_voltages.size(); ++i){
-        node_voltages[i] = x(i);
-    }
+    store_linear_solution(x);
     // //Debug: 输出节点电压
     // std::cout << "Node Voltages:\n";
     // for (int i = 0; i < node_voltages.size(); ++i) {
@@ -431,16 +421,7 @@ void solver::solve_with_LU_matrices(){
     // }
     
     //如果有额外的变量（如支路电流），也存储起来
-    if (x.size() > ckt.node_map.size() - 1) {
-        branch_currents.resize(x.size() - (ckt.node_map.size() - 1));
-        for (int i = ckt.node_map.size() - 1; i < x.size(); ++i) {
-            branch_currents[i - (ckt.node_map.size() - 1)] = x(i);
-        }
-        // std::cout << "Branch Currents:\n";
-        // for (int i = 0; i < branch_currents.size(); ++i) {
-        //     std::cout << "I" << i << ": " << branch_currents[i] << " A\n";
-        // }
-    }
+    // branch_currents are handled inside store_linear_solution
 }
 
 //Gauss-Jacobi迭代法求解线性MNA方程

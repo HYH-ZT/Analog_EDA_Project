@@ -113,6 +113,7 @@ class solver {
         //MNA矩阵操作辅助函数
         void addToY(int rowNode, int colNode, double val);
         void addToJ(int node, double val);
+        void store_linear_solution(const Eigen::VectorXd& x);
         //解析打印变量，填充ckt.print_node_ids
         void parse_print_variables();
 
