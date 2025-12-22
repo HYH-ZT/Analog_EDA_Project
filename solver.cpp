@@ -1398,9 +1398,9 @@ void solver::TRAN_solve(){
         }
         //记录需要画图的支路电流
         for (auto plot_current_dev_index : ckt.plot_branch_current_indices){
-            if(plot_current_dev_index >=0 && plot_current_dev_index < ckt.sources.size()){
+            if (plot_current_dev_index >= 0 && plot_current_dev_index < branch_currents.size()){
                 double i = branch_currents[plot_current_dev_index];
-                tran_plot_data[node_voltages.size() + plot_current_dev_index].push_back(std::make_pair(time, i));
+                tran_plot_data[-(plot_current_dev_index + 1)].push_back(std::make_pair(time, i));
                 //输出调试信息
                 //std::cout << "Plot Data - Time: " << time << " s, Branch Index: " << plot_current_dev_index << ", Current: " << i << " A\n";
             }
@@ -1435,7 +1435,7 @@ void solver::TRAN_solve(){
                 out << "\t" << v;
             }
             for (int current_dev_index : ckt.print_branch_current_indices) {
-                if(current_dev_index >=0 && current_dev_index < ckt.sources.size()){
+                if (current_dev_index >= 0 && current_dev_index < branch_currents.size()){
                     out << "\t" << branch_currents[current_dev_index];
                 }
             }
@@ -1541,7 +1541,7 @@ void solver::TRAN_solve(double tstop, double tstep,int use_initial_dc){
         }
         //记录需要画图的支路电流
         for (auto plot_current_dev_index : ckt.plot_branch_current_indices){
-            if(plot_current_dev_index >=0 && plot_current_dev_index < ckt.sources.size()){
+            if (plot_current_dev_index >= 0 && plot_current_dev_index < branch_currents.size()){
                 double i = branch_currents[plot_current_dev_index];
                 tran_plot_data[-(plot_current_dev_index+1)].push_back(std::make_pair(time, i));
                 // //输出调试信息
@@ -1579,7 +1579,7 @@ void solver::TRAN_solve(double tstop, double tstep,int use_initial_dc){
                 out << "\t" << v;
             }
             for (int current_dev_index : ckt.print_branch_current_indices) {
-                if(current_dev_index >=0 && current_dev_index < ckt.sources.size()){
+                if (current_dev_index >= 0 && current_dev_index < branch_currents.size()){
                     out << "\t" << branch_currents[current_dev_index];
                 }
             }
