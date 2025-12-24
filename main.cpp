@@ -6,12 +6,83 @@
 #include "solver.hpp"
 #include "circuit.hpp"
 #include "parse_netlist.hpp"
-#include <cmath>
+#include <numeric>   // std::gcd
+#include <cmath>     // std::fabs, std::llround
+#include <limits>
+#include <algorithm>
+#include <chrono>
 
 
 using namespace std;
 namespace plt = matplotlibcpp;
 
+static bool almost_integer(double x, double tol = 1e-9) {
+    return std::fabs(x - std::llround(x)) <= tol;
+}
+
+// 将一组 double 频率近似转成整数并求 gcd，返回基频（Hz）。
+// 思路：找一个 scale，使得 fi*scale 都“足够接近整数”；再对整数 gcd。
+static bool gcd_fundamental_freq(const std::vector<double>& freqs,
+                                 double& f0_out,
+                                 double tol = 1e-9)
+{
+    if (freqs.empty()) return false;
+
+    // 过滤非正数，避免异常
+    std::vector<double> f;
+    f.reserve(freqs.size());
+    for (double x : freqs) {
+        if (x > 0.0 && std::isfinite(x)) f.push_back(x);
+    }
+    if (f.empty()) return false;
+
+    // 尝试从 1, 10, 100, ... 1e12 的 scale，使得 fi*scale 都接近整数
+    // 1e12 对应皮赫兹分辨率；一般课程/电路作业足够用
+    const long long scale_candidates[] = {
+        1LL, 10LL, 100LL, 1000LL, 10000LL, 100000LL,
+        1000000LL, 10000000LL, 100000000LL, 1000000000LL,
+        10000000000LL, 100000000000LL, 1000000000000LL
+    };
+
+    long long scale = 0;
+    for (long long s : scale_candidates) {
+        bool ok = true;
+        for (double fi : f) {
+            double x = fi * static_cast<double>(s);
+            if (!almost_integer(x, tol * static_cast<double>(s))) { // 随 scale 放宽一点
+                ok = false;
+                break;
+            }
+        }
+        if (ok) {
+            scale = s;
+            break;
+        }
+    }
+
+    // 如果找不到合适 scale，就退化为“微赫兹量化”（仍然比随便拿一个源强）
+    if (scale == 0) {
+        scale = 1000000LL; // 1e-6 Hz 分辨率
+    }
+
+    // 转整数并 gcd
+    long long g = 0;
+    for (double fi : f) {
+        // 注意溢出风险：若频率特别大，可改用 long double 或更小 scale
+        long long vi = static_cast<long long>(std::llround(fi * static_cast<double>(scale)));
+        if (vi <= 0) continue;
+        g = (g == 0) ? vi : std::gcd(g, vi);
+        if (g == 1) {
+            // gcd 已经到 1（在该 scale 下），可以提前结束
+            // 但仍可继续；这里提前结束可省点时间
+        }
+    }
+
+    if (g <= 0) return false;
+
+    f0_out = static_cast<double>(g) / static_cast<double>(scale);
+    return (f0_out > 0.0 && std::isfinite(f0_out));
+}
 
 int main(int argc, char* argv[]){
     if (argc < 2){
@@ -131,8 +202,12 @@ int main(int argc, char* argv[]){
 
             //sol.TRAN_solve(tstop, tstep,ic_choice);
             //sol.TRAN_solve();
+            //开始计时
+            auto start_time = std::chrono::high_resolution_clock::now();
             sol.TRAN_solve(tstop, tstep, ic_choice);
-            cout << "Transient analysis completed.\n";
+            auto end_time = std::chrono::high_resolution_clock::now();
+            std::chrono::duration<double> elapsed = end_time - start_time;
+            cout << "Transient analysis completed in " << elapsed.count() << " seconds.\n";
             // //打印要观察的节点电压时间序列
             // for (const auto& tran_plot_pair : sol.get_tran_plot_data()){
             //     int node_id = tran_plot_pair.first;
@@ -142,6 +217,9 @@ int main(int argc, char* argv[]){
             //         cout << "Time: " << tv.first << " s, Voltage: " << tv.second << " V\n";
             //     }
             // }
+
+            //打印瞬态结果到文件
+            sol.print_tran_results();
 
             // 12.14 绘制要观察的节点电压波形和支路电流波形，要求画在一个窗口里，电流电压坐标轴独立
             plt::figure(1);

@@ -185,7 +185,9 @@ void solver::build_transient_ckt(double tstep){
             else if(transient_method == TransientMethod::BACKWARD_EULER){
                 // //使用梯形法戴维南等效参数
                 // R_eq = L / tstep;
-                // V_eq = - L * I_prev / tstep;                
+                // V_eq = - L * I_prev / tstep;    
+                // I_eq = 0;
+                //使用梯形法诺顿等效参数
                 R_eq = L / tstep;
                 V_eq = 0;
                 I_eq = I_prev;
@@ -194,6 +196,7 @@ void solver::build_transient_ckt(double tstep){
                 // //使用梯形法戴维南等效参数
                 // R_eq = 2 * L / tstep;
                 // V_eq = -2 * L * I_prev / tstep - (V1_prev - V2_prev);
+                // I_eq = 0;
                 //使用梯形法诺顿等效参数
                 R_eq = 2 * L / tstep;
                 V_eq = 0;
@@ -423,9 +426,10 @@ void solver::TRAN_solve(double tstop, double tstep,int use_initial_dc){
     // double tstep = analysis_type.parameters["tstep"];
     int steps = static_cast<int>(tstop / tstep);
     tran_plot_data.clear();
+    tran_print_data.clear();
     for (int step = 0; step <= steps; ++step){
         double time = step * tstep;
-        std::cout << "Transient Analysis Time: " << time << " s\n";
+        // std::cout << "Transient Analysis Time: " << time << " s\n";
         //构建瞬态分析电路
         build_transient_ckt(tstep);
         
@@ -492,45 +496,106 @@ void solver::TRAN_solve(double tstop, double tstep,int use_initial_dc){
             }
         }
 
-        //根据需要打印的变量，存到文件中
-        {
-            // 输出文件: transient_print.txt
-            if (step == 0) {
-                std::ofstream hdr("transient_print.txt", std::ios::out);
-                hdr << "Time(s)";
-                for (int node_id : ckt.print_node_ids) {
-                    std::string name = "NODE";
-                    if (node_id >= 0 && node_id < (int)ckt.node_list.size()) name = ckt.node_list[node_id];
-                    hdr << "\tV(" << name << ")";
-                }
-                //只需要遍历所有sources，按顺序输出支路电流表头
-                for (const auto &d : ckt.sources){
-                    if (d.printI) hdr << "\tI(" << d.name << ")";
-                }
-                //关闭
-                hdr << "\n";
-                hdr.close();
-            }
-
-            std::ofstream out("transient_print.txt", std::ios::app);
-            out << time;
-            for (int node_id : ckt.print_node_ids) {
-                double v = 0.0;
-                if (node_id == 0) v = 0.0;
-                else if (node_id - 1 >= 0 && node_id - 1 < node_voltages.size()) v = node_voltages[node_id - 1];
-                out << "\t" << v;
-            }
-            for (int current_dev_index : ckt.print_branch_current_indices) {
-                if (current_dev_index >= 0 && current_dev_index < branch_currents.size()){
-                    out << "\t" << branch_currents[current_dev_index];
-                }
-            }
-
-            out << "\n";
-            out.close();
+        //记录需要打印节点此时的电压
+        for (auto print_node_id : ckt.print_node_ids){
+            double v = 0.0;
+            if (print_node_id == 0) v = 0.0;
+            else if (print_node_id - 1 >= 0 && print_node_id - 1 < node_voltages.size()) v = node_voltages[print_node_id - 1];
+            tran_print_data[print_node_id].push_back(std::make_pair(time, v));
+            //输出调试信息
+            //std::cout << "Print Data - Time: " << time << " s, Node ID: " << print_node_id << ", Voltage: " << v << " V\n";
         }
+        //记录需要打印的支路电流
+        for (auto print_current_dev_index : ckt.print_branch_current_indices){
+            if (print_current_dev_index >= 0 && print_current_dev_index < branch_currents.size()){
+                double i = branch_currents[print_current_dev_index];
+                tran_print_data[-(print_current_dev_index+1)].push_back(std::make_pair(time, i));
+                //输出调试信息
+                //std::cout << "Print Data - Time: " << time << " s, Branch Index: " << print_current_dev_index << ", Current: " << i << " A\n";
+            }
+        }
+        
+
+        // //根据需要打印的变量，存到文件中
+        // {
+        //     // 输出文件: transient_print.txt
+        //     if (step == 0) {
+        //         std::ofstream hdr("transient_print.txt", std::ios::out);
+        //         hdr << "Time(s)";
+        //         for (int node_id : ckt.print_node_ids) {
+        //             std::string name = "NODE";
+        //             if (node_id >= 0 && node_id < (int)ckt.node_list.size()) name = ckt.node_list[node_id];
+        //             hdr << "\tV(" << name << ")";
+        //         }
+        //         //只需要遍历所有sources，按顺序输出支路电流表头
+        //         for (const auto &d : ckt.sources){
+        //             if (d.printI) hdr << "\tI(" << d.name << ")";
+        //         }
+        //         //关闭
+        //         hdr << "\n";
+        //         hdr.close();
+        //     }
+
+        //     std::ofstream out("transient_print.txt", std::ios::app);
+        //     out << time;
+        //     for (int node_id : ckt.print_node_ids) {
+        //         double v = 0.0;
+        //         if (node_id == 0) v = 0.0;
+        //         else if (node_id - 1 >= 0 && node_id - 1 < node_voltages.size()) v = node_voltages[node_id - 1];
+        //         out << "\t" << v;
+        //     }
+        //     for (int current_dev_index : ckt.print_branch_current_indices) {
+        //         if (current_dev_index >= 0 && current_dev_index < branch_currents.size()){
+        //             out << "\t" << branch_currents[current_dev_index];
+        //         }
+        //     }
+
+        //     out << "\n";
+        //     out.close();
+        // }
+
 
     }
+}
+
+//打印瞬态结果
+void solver::print_tran_results(){
+    //输出tran_print_data到文件
+    std::ofstream out("transient_print_data.txt", std::ios::out);
+    //输出表头
+    out << "Time(s)";
+    for (const auto& pair : tran_print_data){
+        int id = pair.first;
+        if (id >= 0){
+            std::string name = "NODE";
+            if (id >= 0 && id < (int)ckt.node_list.size()) name = ckt.node_list[id];
+            out << "\tV(" << name << ")";
+        }
+        else{
+            int branch_index = -(id + 1);
+            std::string dev_name = "BRANCH";
+            if (branch_index >= 0 && branch_index < (int)ckt.sources.size()){
+                dev_name = ckt.sources[branch_index].name;
+            }
+            out << "\tI(" << dev_name << ")";
+        }
+    }
+    out << "\n";
+
+    //假设所有数据长度相同，遍历时间点
+    if (!tran_print_data.empty()){
+        size_t data_size = tran_print_data.begin()->second.size();
+        for (size_t i = 0; i < data_size; ++i){
+            //输出时间
+            out << tran_print_data.begin()->second[i].first;
+            //输出各变量数据
+            for (const auto& pair : tran_print_data){
+                out << "\t" << pair.second[i].second;
+            }
+            out << "\n";
+        }
+    }
+    out.close();
 }
 
 

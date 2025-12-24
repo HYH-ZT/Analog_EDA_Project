@@ -967,7 +967,17 @@ void solver::solve_linear_MNA_Gauss_Seidel(){
 
     }
 
+//    Eigen::VectorXd x_old = Eigen::VectorXd::Zero(n);
+
+    //从上次的解开始迭代
     Eigen::VectorXd x_old = Eigen::VectorXd::Zero(n);
+    //把电压和电流结果合并到x_old中，注意可能是空的
+    for (int i = 0; i < std::min((int)node_voltages.size(), n); ++i){
+        x_old(i) = node_voltages[i];
+    }
+    for (int i = 0; i < std::min((int)branch_currents.size(), n - (int)node_voltages.size()); ++i){
+        x_old(ckt.node_map.size() - 1 + i) = branch_currents[i];
+    }
 
     Eigen::VectorXd x_new = Eigen::VectorXd::Zero(n);
 
