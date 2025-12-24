@@ -30,6 +30,7 @@ int main(int argc, char* argv[]){
     for (auto& analysis : analyses){
         solver sol(ckt, analysis);
         if (analysis.type == "DC"){
+            cout << "\nDC analysis begin.\n";
             //询问DC分析方法
             cout << "Select DC analysis method:\n";
             cout << "1. Gauss Elimination\n";
@@ -76,6 +77,7 @@ int main(int argc, char* argv[]){
             sol.print_dc_results();
         }
         else if (analysis.type == "TRAN"){
+            cout << "\nTransient analysis begin.\n";
             double tstep = analysis.parameters.count("tstep") ? analysis.parameters["tstep"] : 1e-9;
             double tstop = analysis.parameters.count("tstop") ? analysis.parameters["tstop"] : 1e-6;
             //选择瞬态分析方法
@@ -226,6 +228,7 @@ int main(int argc, char* argv[]){
             // plt::show();
         }
         else if (analysis.type == "HB"){
+            cout << "\nHarmonic Balance analysis begin.\n";
             //询问使用0初值还是瞬态结果作为初值
             cout << "Select initial condition for Harmonic Balance analysis:\n";
             cout << "1. Zero Initial Condition\n";
@@ -328,6 +331,7 @@ int main(int argc, char* argv[]){
 
         }
         else if (analysis.type == "SHOOTING"){
+            cout << "\nShooting analysis begin.\n";
             double freq;
             if (analysis.parameters.count("freq")) {
                 // 用户显式指定：保持原行为（你也可以改成“把它也纳入 gcd”，看你需求）
