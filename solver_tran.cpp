@@ -376,13 +376,15 @@ Eigen::MatrixXd solver::TRAN_solve_return(double tstop, double tstep,int use_ini
     for (int step = 0; step <= steps; ++step){
         double time = step * tstep;
         // std::cout << "Transient Analysis Time: " << time << " s\n";
+
         //构建瞬态分析电路
         build_transient_ckt(tstep);
         // std::cout << "Transient Circuit built for time " << time << " s\n";
+
         //直接调用DC求解器
         //求解非线性MNA方程，以上次节点电压为初值
         DC_solve(node_voltages, true, time);
-        // clear_transient_equiv_devices();
+
         // std::cout << "Node Voltages at time " << time << " s:\n" << node_voltages << "\n";
         //记录当前时刻的节点电压到返回矩阵
         // std::cout << "node_map: " << ckt.node_map.size() << " \n";
@@ -390,12 +392,6 @@ Eigen::MatrixXd solver::TRAN_solve_return(double tstop, double tstep,int use_ini
             // std::cout << i << ": " << node_voltages[i] << "\n";
             results(i, step) = node_voltages(i);
         }
-        // std::cout << "Branch Currents at time " << time << " s:\n";
-        // //电流节点也存入(还没有找到好方法存电流，因为瞬态的电路多了很多电压源，电流节点索引不对)
-        // for (int i = ckt.node_map.size() - 1; i < base_size; ++i){
-        //     results(i, step) = branch_currents[i - (ckt.node_map.size() - 1)];
-        // }
-        // std::cout << "complete" << "\n";
     }   
 
     // //Debug: 输出返回矩阵

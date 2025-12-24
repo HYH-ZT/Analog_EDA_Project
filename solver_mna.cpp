@@ -303,38 +303,6 @@ void solver::build_sources_MNA(){
                 MNA_Y(new_var_index, n2 - 1) = -1;
                 MNA_Y(n2 - 1, new_var_index) = -1;
             }
-
-
-            // //引入辅助变量和KVL方程
-            // if (n1 == 0){
-            //     //节点n2电压为-value
-            //     J(n2 - 1) = -value;
-            //     MNA_Y.row(n2 - 1).setZero();
-            //     MNA_Y(n2 - 1, n2 - 1) = 1;
-            //     //引入支路电流变量与新方程
-
-            // }
-            // else if (n2 == 0){
-            //     //节点n1电压为value
-            //     J(n1 - 1) = value;
-            //     MNA_Y.row(n1 - 1).setZero();
-            //     MNA_Y(n1 - 1, n1 - 1) = 1;
-            // }
-            // else{
-            //     //引入支路电流变量与新方程
-            //     int new_var_index = MNA_Y.rows();
-            //     MNA_Y.conservativeResize(new_var_index + 1, new_var_index + 1);
-            //     MNA_Y.row(new_var_index).setZero();
-            //     MNA_Y.col(new_var_index).setZero();
-            //     J.conservativeResize(new_var_index + 1);
-            //     J(new_var_index) = value;
-            //     //KVL方程
-            //     MNA_Y(new_var_index, n1 - 1) = 1;
-            //     MNA_Y(new_var_index, n2 - 1) = -1;
-            //     //支路电流对节点的贡献
-            //     MNA_Y(n1 - 1, new_var_index) = 1;
-            //     MNA_Y(n2 - 1, new_var_index) = -1;
-            // }
         }
         if (c == 'I'){
             //独立电流源
@@ -490,38 +458,6 @@ void solver::build_sources_MNA(bool in_tran,double time){
                 MNA_Y(new_var_index, n2 - 1) = -1;
                 MNA_Y(n2 - 1, new_var_index) = -1;
             }
-
-
-            // //引入辅助变量和KVL方程
-            // if (n1 == 0){
-            //     //节点n2电压为-value
-            //     J(n2 - 1) = -value;
-            //     MNA_Y.row(n2 - 1).setZero();
-            //     MNA_Y(n2 - 1, n2 - 1) = 1;
-            //     //引入支路电流变量与新方程
-
-            // }
-            // else if (n2 == 0){
-            //     //节点n1电压为value
-            //     J(n1 - 1) = value;
-            //     MNA_Y.row(n1 - 1).setZero();
-            //     MNA_Y(n1 - 1, n1 - 1) = 1;
-            // }
-            // else{
-            //     //引入支路电流变量与新方程
-            //     int new_var_index = MNA_Y.rows();
-            //     MNA_Y.conservativeResize(new_var_index + 1, new_var_index + 1);
-            //     MNA_Y.row(new_var_index).setZero();
-            //     MNA_Y.col(new_var_index).setZero();
-            //     J.conservativeResize(new_var_index + 1);
-            //     J(new_var_index) = value;
-            //     //KVL方程
-            //     MNA_Y(new_var_index, n1 - 1) = 1;
-            //     MNA_Y(new_var_index, n2 - 1) = -1;
-            //     //支路电流对节点的贡献
-            //     MNA_Y(n1 - 1, new_var_index) = 1;
-            //     MNA_Y(n2 - 1, new_var_index) = -1;
-            // }
         }
         if (c == 'I'){
             //独立电流源
@@ -537,5 +473,3 @@ void solver::build_sources_MNA(bool in_tran,double time){
         }
     }
 }
-
-//直流分析

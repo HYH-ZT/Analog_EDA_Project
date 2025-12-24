@@ -77,7 +77,7 @@ bool gcd_fundamental_freq(const std::vector<double>& freqs,
 
 
 //==================================================
-//shooting method大改专用函数
+//shooting method专用函数
 //==================================================
 
 
@@ -330,11 +330,6 @@ void solver::PSS_solve_shooting_trapezoidal(double T, double tstep, int max_it, 
     const int m = (int)cap_states.size();
     const int n = (int)ind_states.size();
     const int N = m + n;
-
-    // 初猜：可以先用 init_transient_tr() 得到的状态，而不是全零
-    // Eigen::VectorXd x0 = Eigen::VectorXd::Zero(N);
-    // for (int k = 0; k < m; ++k) x0[k] = cap_states[k].v_prev;
-    // for (int k = 0; k < n; ++k) x0[m + k] = ind_states[k].i_prev;
 
     int N_pre_cycles = pre_run_cycles;
     if (N_pre_cycles < 0) {

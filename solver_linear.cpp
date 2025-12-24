@@ -5,7 +5,6 @@
 #include <iostream>
 #include <vector>
 
-
 //存储解变量
 void solver::store_linear_solution(const Eigen::VectorXd& x) {
     const int node_count = (int)ckt.node_map.size() - 1;
@@ -95,8 +94,6 @@ void solver::solve_linear_MNA_Gauss(){
     // branch_currents are handled inside store_linear_solution
 }
 
-
-
 //LU分解法求解MNA方程
 
 void solver::solve_linear_MNA_LU(){
@@ -107,8 +104,6 @@ void solver::solve_linear_MNA_LU(){
 
     // std::cout << "J Vector:\n" << J << "\n";
 
-    
-
     int n = MNA_Y.rows();
 
     if (n == 0) {
@@ -119,13 +114,9 @@ void solver::solve_linear_MNA_LU(){
 
     }
 
-    
-
     //使用Eigen的LU分解求解器
 
     Eigen::PartialPivLU<Eigen::MatrixXd> lu(MNA_Y);
-
-    
 
     //检查矩阵是否可逆
 
@@ -135,13 +126,9 @@ void solver::solve_linear_MNA_LU(){
 
     }
 
-    
-
     //求解线性方程组 MNA_Y * x = J
 
     Eigen::VectorXd x = lu.solve(J);
-
-    
 
     // //Debug检查解的精度
 
@@ -149,31 +136,18 @@ void solver::solve_linear_MNA_LU(){
 
     // std::cout << "LU Decomposition Relative Error: " << relative_error << "\n";
 
-    
-
     //存储节点电压结果
 
     store_linear_solution(x);
-    
 
     //如果有额外的变量（如支路电流），也存储起来
 
     // branch_currents are handled inside store_linear_solution
 }
 
-
-
 //完整LU分解法（手动实现）
 
-void solver::get_linear_MNA_LU_manual(){
-
-    // std::cout << "Manual LU Decomposition:\n";
-
-    // std::cout << "Original MNA Matrix:\n" << MNA_Y << "\n";
-
-    // std::cout << "Original J Vector:\n" << J << "\n";
-
-    
+void solver::get_linear_MNA_LU_manual(){ 
 
     int n = MNA_Y.rows();
 
@@ -185,15 +159,11 @@ void solver::get_linear_MNA_LU_manual(){
 
     }
 
-    
-
     //初始化L和U矩阵
 
     L = Eigen::MatrixXd::Identity(n, n);  //L矩阵初始为单位矩阵
 
     U = Eigen::MatrixXd::Zero(n, n);      //U矩阵初始为零矩阵
-
-    
 
     //复制原矩阵到临时矩阵A进行操作
 
@@ -203,15 +173,11 @@ void solver::get_linear_MNA_LU_manual(){
 
     Eigen::VectorXd b = J;
 
-    
-
     //部分主元选择的置换向量
 
     std::vector<int> pivot_order(n);
 
     for (int i = 0; i < n; ++i) pivot_order[i] = i;
-
-    
 
     //进行LU分解
 
@@ -231,8 +197,6 @@ void solver::get_linear_MNA_LU_manual(){
 
         }
 
-        
-
         //如果需要，交换行
 
         if (max_row != k) {
@@ -245,8 +209,6 @@ void solver::get_linear_MNA_LU_manual(){
 
             std::swap(pivot_order[k], pivot_order[max_row]);
 
-            
-
             // 交换L矩阵中已计算的部分（第k列之前的元素）
 
             for (int j = 0; j < k; ++j) {
@@ -255,13 +217,9 @@ void solver::get_linear_MNA_LU_manual(){
 
             }
 
-            
-
             // std::cout << "Swapping rows " << k << " and " << max_row << " (including J vector)\n";
 
         }
-
-        
 
         //检查主元是否接近零
 
@@ -271,8 +229,6 @@ void solver::get_linear_MNA_LU_manual(){
 
         }
 
-        
-
         //计算U矩阵的第k行
 
         for (int j = k; j < n; ++j) {
@@ -280,8 +236,6 @@ void solver::get_linear_MNA_LU_manual(){
             U(k, j) = A(k, j);
 
         }
-
-        
 
         //计算L矩阵的第k列并进行消元
 
@@ -311,51 +265,10 @@ void solver::get_linear_MNA_LU_manual(){
 
     }
 
-    
-
     //存储经过置换的J向量，供后续求解使用
 
     J_permuted = b;
-
-    
-
-    // //验证LU分解的正确性
-
-    // Eigen::MatrixXd product = L * U;
-
-    // Eigen::MatrixXd error_matrix = product - MNA_Y;
-
-    // double max_error = error_matrix.cwiseAbs().maxCoeff();
-
-    
-
-    // std::cout << "LU Decomposition Results:\n";
-
-    // std::cout << "L Matrix:\n" << L << "\n";
-
-    // std::cout << "U Matrix:\n" << U << "\n";
-
-    // std::cout << "L*U Product:\n" << product << "\n";
-
-    // std::cout << "Permuted J Vector:\n" << J_permuted << "\n";
-
-    // std::cout << "Maximum decomposition error: " << max_error << "\n";
-
-    
-
-    // if (max_error < 1e-10) {
-
-    //     std::cout << "LU decomposition successful!\n";
-
-    // } else {
-
-    //     std::cout << "Warning: LU decomposition may have numerical issues\n";
-
-    // }
-
 }
-
-
 
 //使用已计算的L和U矩阵求解MNA方程
 
@@ -369,8 +282,6 @@ void solver::solve_with_LU_matrices(){
 
     }
 
-    
-
     if (J_permuted.size() == 0) {
 
         std::cout << "Error: Permuted J vector not available. Call get_linear_MNA_LU_manual() first.\n";
@@ -379,15 +290,11 @@ void solver::solve_with_LU_matrices(){
 
     }
 
-    
-
     int n = L.rows();
 
     // std::cout << "Solving using pre-computed L and U matrices:\n";
 
     // std::cout << "Permuted J Vector:\n" << J_permuted << "\n";
-
-    
 
     //第一步：前向替代求解 L*y = J_permuted
 
@@ -407,11 +314,7 @@ void solver::solve_with_LU_matrices(){
 
     }
 
-    
-
     // std::cout << "Intermediate vector y (L*y = J_permuted):\n" << y << "\n";
-
-    
 
     //第二步：后向替代求解 U*x = y
 
@@ -431,11 +334,7 @@ void solver::solve_with_LU_matrices(){
 
     }
 
-    
-
     // std::cout << "Solution vector x (U*x = y):\n" << x << "\n";
-
-    
 
     //验证解的正确性（使用原始的MNA矩阵和J向量）
 
@@ -445,29 +344,10 @@ void solver::solve_with_LU_matrices(){
 
     // std::cout << "Residual norm ||MNA_Y*x - J||: " << residual_norm << "\n";
 
-    
-
     //存储节点电压结果
 
     store_linear_solution(x);
-    // //Debug: 输出节点电压
-
-    // std::cout << "Node Voltages:\n";
-
-    // for (int i = 0; i < node_voltages.size(); ++i) {
-
-    //     std::cout << "V" << i+1 << ": " << node_voltages[i] << " V\n";
-
-    // }
-
-    
-
-    //如果有额外的变量（如支路电流），也存储起来
-
-    // branch_currents are handled inside store_linear_solution
 }
-
-
 
 //Gauss-Jacobi迭代法求解线性MNA方程
 
@@ -482,80 +362,6 @@ void solver::solve_linear_MNA_Gauss_Jacobi(){
     //先进行行交换，确保对角线元素不为零
 
     int n = MNA_Y.rows();
-
-    // for (int k = 0; k < n; ++k){
-
-    //     if (std::abs(MNA_Y(k, k)) < 1e-6){
-
-    //         //寻找所有行中绝对值最大的元素进行交换
-
-    //         int max_row = k;
-
-    //         for (int i = 0; i < n; ++i){
-
-    //             if (std::abs(MNA_Y(i, k)) > std::abs(MNA_Y(max_row, k))){
-
-    //                 max_row = i;
-
-    //             }
-
-    //         }
-
-    //         if (max_row != k){
-
-    //             MNA_Y.row(k).swap(MNA_Y.row(max_row));
-
-    //             std::swap(J(k), J(max_row));
-
-    //             // std::cout << "Swapping rows " << k << " and " << max_row << " to avoid zero diagonal\n";
-
-    //         }
-
-    //     }
-
-    // }
-
-
-
-    // //Debug:用LU分解法先得到解
-
-    // //使用Eigen的LU分解求解器
-
-    // Eigen::PartialPivLU<Eigen::MatrixXd> lu(MNA_Y);
-
-    
-
-    // //检查矩阵是否可逆
-
-    // if (lu.determinant() == 0.0) {
-
-    //     std::cout << "Warning: Matrix is singular or near-singular\n";
-
-    // }
-
-    
-
-    // //求解线性方程组 MNA_Y * x = J
-
-    // Eigen::VectorXd x = lu.solve(J);
-
-
-
-    // std::cout << "LU Decomposition Solution x:\n" << x << "\n";
-
-    // /////////////////////////////////////////////////////////////
-
-
-
-    // //使用对角占优化处理，增强收敛性
-
-    // Eigen::MatrixXd inversePerm = diagMax();
-
-    // //Debug: 输出MNA矩阵和J向量在主元交换后的形式
-
-    // std::cout << "MNA_Y Matrix before pivoting:\n" << MNA_Y << "\n";
-
-
 
     //对于MNA(i,i)为零的情况，必然是电压源，寻找上方为1或者-1的行，哪个行对应的对角元小，与那行交换
 
@@ -629,17 +435,11 @@ void solver::solve_linear_MNA_Gauss_Jacobi(){
 
     }
 
-
-
-
-
     // //Debug: 输出调整后的MNA矩阵和J向量
 
     // std::cout << "Adjusted MNA_Y Matrix:\n" << MNA_Y << "\n";
 
     // std::cout << "Adjusted J Vector:\n" << J << "\n";
-
-
 
     //构造迭代矩阵，判断收敛性
 
@@ -650,20 +450,6 @@ void solver::solve_linear_MNA_Gauss_Jacobi(){
     Eigen::MatrixXd L_plus_U = MNA_Y - D;
 
     Eigen::MatrixXd iteration_matrix = -D_inv * L_plus_U;
-
-    // //Debug: 输出D矩阵和D的逆
-
-    // std::cout << "D Matrix:\n" << D << "\n";
-
-    // std::cout << "D Inverse Matrix:\n" << D_inv << "\n";
-
-    // //Debug: 输出L+U矩阵
-
-    // std::cout << "L + U Matrix:\n" << L_plus_U << "\n";
-
-    // //Debug: 输出迭代矩阵
-
-    // std::cout << "Iteration Matrix:\n" << iteration_matrix << "\n";
 
     //计算特征值判断收敛性
 
@@ -695,32 +481,6 @@ void solver::solve_linear_MNA_Gauss_Jacobi(){
 
     }
 
-
-
-    // // std::cout << "Solving MNA equations using Gauss-Jacobi Iteration:\n";
-
-    // // //展示特征值
-
-    // Eigen::EigenSolver<Eigen::MatrixXd> es(MNA_Y);
-
-    // // std::cout << "Eigenvalues of MNA_Y:\n" << es.eigenvalues() << "\n";
-
-    // // //如果存在特征值绝对值大于1，则可能不收敛
-
-    // for (int i = 0; i < es.eigenvalues().size(); ++i) {
-
-    //     if (std::abs(es.eigenvalues()(i)) > 1.0) {
-
-    //         std::cout << "Warning: Eigenvalue " << es.eigenvalues()(i) << " may indicate non-convergence\n";
-
-    //         break;
-
-    //     }
-
-    // }
-
-
-
     Eigen::VectorXd x_old = Eigen::VectorXd::Zero(n);
 
     Eigen::VectorXd x_new = Eigen::VectorXd::Zero(n);
@@ -729,11 +489,7 @@ void solver::solve_linear_MNA_Gauss_Jacobi(){
 
     const double tolerance = 1e-10;
 
-    
-
     for (int iter = 0; iter < max_iterations; ++iter) {
-
-
 
         for (int i = 0; i < n; ++i) {
 
@@ -763,13 +519,9 @@ void solver::solve_linear_MNA_Gauss_Jacobi(){
 
         }
 
-        
-
         // //Debug: 输出每次迭代的结果
 
         // std::cout << "Iteration " << iter + 1 << ": x = " << x_new << "\n";
-
-
 
         //检查收敛性
 
@@ -783,11 +535,7 @@ void solver::solve_linear_MNA_Gauss_Jacobi(){
 
         }
 
-        
-
         x_old = x_new;
-
-        
 
         if (iter == max_iterations - 1) {
 
@@ -796,46 +544,6 @@ void solver::solve_linear_MNA_Gauss_Jacobi(){
         }
 
     }
-
-    // //交换回来
-
-    // x_new = inversePerm * x_new;
-
-    // 3. 恢复解的顺序
-
-    
-
-    // //Debug: 输出最终解
-
-    // std::cout << "Gauss-Jacobi Solution x:\n" << x_new << "\n";
-
-    
-
-    // //存储节点电压结果
-
-    // node_voltages.resize(ckt.node_map.size() - 1);
-
-    // for (int i = 0; i < ckt.node_map.size() - 1; ++i){
-
-    //     node_voltages[i] = x_new(i);
-
-    // }
-
-    // //如果有额外的变量（如支路电流），也存储起来
-
-    // if (x_new.size() > ckt.node_map.size() - 1) {
-
-    //     branch_currents.resize(x_new.size() - (ckt.node_map.size() - 1));
-
-    //     for (int i = ckt.node_map.size() - 1; i < x_new.size(); ++i) {
-
-    //         branch_currents[i - (ckt.node_map.size() - 1)] = x_new(i);
-
-    //     }
-
-    // }
-
-   //////////////////////////////////////
 
     //存储节点电压结果
 
@@ -857,8 +565,6 @@ void solver::solve_linear_MNA_Gauss_Jacobi(){
 
     // }
 
-    
-
     //如果有额外的变量（如支路电流），也存储起来
 
     if (x_new.size() > ckt.node_map.size() - 1) {
@@ -871,19 +577,9 @@ void solver::solve_linear_MNA_Gauss_Jacobi(){
 
         }
 
-        // std::cout << "Branch Currents:\n";
-
-        // for (int i = 0; i < branch_currents.size(); ++i) {
-
-        //     std::cout << "I" << i << ": " << branch_currents[i] << " A\n";
-
-        // }
-
     }
 
 }
-
-
 
 //Gauss-Seidel迭代法求解线性MNA方程
 
@@ -892,8 +588,6 @@ void solver::solve_linear_MNA_Gauss_Seidel(){
     //先进行行交换，确保对角线元素不为零
 
     int n = MNA_Y.rows();
-
-
 
     //对于MNA(i,i)为零的情况，必然是电压源，寻找上方为1或者-1的行，哪个行对应的对角元小，与那行交换
 
@@ -1049,18 +743,6 @@ void solver::solve_linear_MNA_Gauss_Seidel(){
 
     }
 
-    // //Debug: 输出节点电压
-
-    // std::cout << "Node Voltages:\n";
-
-    // for (int i = 0; i < node_voltages.size(); ++i) {
-
-    //     std::cout << "V" << i+1 << ": " << node_voltages[i] << " V\n";
-
-    // }
-
-    
-
     //如果有额外的变量（如支路电流），也存储起来
 
     if (x_new.size() > ckt.node_map.size() - 1) {
@@ -1084,8 +766,6 @@ void solver::solve_linear_MNA_Gauss_Seidel(){
     }
 
 }
-
-
 
 //根据设置的方法选择线性方程求解算法
 
@@ -1137,8 +817,6 @@ void solver::solve_linear_MNA(){
 
 }
 
-
-
 //method: 0-高斯消去法，1-LU分解法，2-手动LU分解法，3-Gauss-Jacobi迭代法
 
 void solver::solve_linear_MNA(int method){
@@ -1180,5 +858,3 @@ void solver::solve_linear_MNA(int method){
     }
 
 }
-
-// 运行一次瞬态，用给定初始条件 init_x，返回 T 处的节点电压

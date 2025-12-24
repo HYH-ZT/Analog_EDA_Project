@@ -174,18 +174,6 @@ void solver::hb_build_linear_MNA(){
         //将该频率点的线性MNA矩阵放入多频率点矩阵中
         hb_liner_Y.block((h + hb_params.num_harmonics) * base_size, (h + hb_params.num_harmonics) * base_size, base_size, base_size) = Y_h;
     }
-    // //Debug: 输出多频率点的线性MNA矩阵和J向量
-    // //输出到文件中查看
-    // std::ofstream out("hb_linear_MNA.txt");
-    // if (out.is_open()) {
-    //     out << "Harmonic Balance Linear MNA Matrix (Y):\n" << hb_liner_Y << "\n";
-    //     out << "Harmonic Balance Linear J Vector:\n" << hb_J << "\n";
-    //     out.close();
-    // } else {
-    //     std::cerr << "Error opening file for writing: hb_linear_MNA.txt\n";
-    // }
-    // std::cout << "Harmonic Balance Linear J Vector:\n" << hb_J << "\n";
-    // std::cout << "Harmonic Balance Linear MNA Matrix (Y):\n" << hb_liner_Y << "\n";
 }
 
 //构建普通的DFT和IDFT变换矩阵
@@ -432,9 +420,6 @@ void solver::hb_build_nonlinear_MNA(){
         char c = toupper(dev.name[0]);
         //初始化电流向量
         if(c == 'M'){
-            // //Debug: 输出器件信息
-            // std::cout << "Processing Nonlinear Device: " << dev.name << " Type: " << dev.type << "\n";
-            //读取器件参数，不考虑body节点
             int n1 = dev.nodes[0];
             int ng0 = dev.nodes[1];
             int n2 = dev.nodes[2];
@@ -460,8 +445,6 @@ void solver::hb_build_nonlinear_MNA(){
             Eigen::VectorXcd V1 = Eigen::VectorXcd::Zero(2 * hb_params.num_harmonics + 1);
             Eigen::VectorXcd Vg0 = Eigen::VectorXcd::Zero(2 * hb_params.num_harmonics + 1);
             Eigen::VectorXcd V2 = Eigen::VectorXcd::Zero(2 * hb_params.num_harmonics + 1);
-            // //debug: 输出节点信息
-            // std::cout << "Start trans" << "\n";
             // 从 hb_xt 中提取各节点的时域序列时要注意：
             // - 节点号为 0 表示接地，应直接赋 0
             // - hb_xt 长度为 base_size * N (N = 2*num_harmonics+1)，索引必须在 [0, hb_xt.size()-1] 范围内
@@ -504,7 +487,6 @@ void solver::hb_build_nonlinear_MNA(){
                 }
             }
             // //取实部
-            // std::cout << "Start real part extraction" << "\n";
             Eigen::VectorXd V1_real = V1.real();
             Eigen::VectorXd Vg0_real = Vg0.real();
             Eigen::VectorXd V2_real = V2.real();
@@ -686,12 +668,6 @@ void solver::hb_build_nonlinear_MNA(){
     std::chrono::duration<double> transform_duration = end_transform - start_transform;
     std::cout << "Time-Frequency Transform Time: " << transform_duration.count() << " seconds.\n";
 
-
-    // //Debug: 输出时域雅可比矩阵
-    // std::cout << "Time-Domain Jacobian Matrix (t_jacobian):\n" << t_jacobian << "\n";
-    // //Debug: 输出频域雅可比矩阵
-    // std::cout << "MOS Frequency-Domain Jacobian Matrix (hb_jacobian):\n" << hb_jacobian << "\n";
-
     hb_jacobian += hb_liner_Y;
 }
 
@@ -706,13 +682,9 @@ void solver::hb_solve_linear_MNA(){
         Eigen::PartialPivLU<Eigen::MatrixXcd> lu(hb_MNA_Y);
         hb_x = lu.solve(hb_J);
     }
-    // //Debug: 输出多频率点的解向量
-    // std::cout << "Harmonic Balance Linear MNA Solution (x):\n" << hb_x << "\n";
-    //进行IDFT变换，得到时域解
+    
     // Eigen::VectorXcd hb_xt = hb_iDFT(hb_x);
     hb_xt = hb_F2T_matrix * hb_x;
-    // //Debug: 输出时域解向量
-    // std::cout << "Harmonic Balance Time-Domain Solution (xt):\n" << hb_xt << "\n";
 }
 
 //设置初始频域解
@@ -729,9 +701,6 @@ void solver::HB_set_initial_xw(){
 
     int N = 2 * hb_params.num_harmonics + 1;
     hb_xw = Eigen::VectorXcd::Zero(base_size * N);
-
-    // //Debug: 输出初始频域解
-    // std::cout << "Initial Harmonic Balance Frequency-Domain Solution (xw):\n" << hb_xw << "\n";
 }
 
 //先进行一次瞬态仿真，得到初始时域解，然后进行DFT变换得到频域解，来设定初始频域解
@@ -855,39 +824,32 @@ void solver::PSS_solve_harmonic_balance(){
         //已经得到新的频域解
         //初值调节迭代
 
-
-
-        // //Debug: 输出当前MNA矩阵和J向量
-        // std::cout << "Harmonic Balance MNA Matrix (Y):\n" << hb_MNA_Y << "\n";
-        // std::cout << "Harmonic Balance Jacobian Matrix:\n" << hb_jacobian << "\n";
-        // std::cout << "Harmonic Balance J Vector:\n" << hb_J << "\n";
-
         //迭代求解
         Eigen::VectorXcd delta_F = hb_J - (hb_MNA_Y * hb_xw);
 
-    //Debug: 计时开始
-    //开始时间点
-    auto start_solveMNA = std::chrono::high_resolution_clock::now();
-    
-    // Eigen::VectorXcd delta_xw = hb_jacobian.fullPivLu().solve(delta_F);
-    //根据HB求解器设置选择LU实现
-    Eigen::VectorXcd delta_xw;
-    if (hb_params.hb_solver_method == HBLinearSolverMethod::MANUAL_LU) {
-        delta_xw = solve_lu_partial_pivot(hb_jacobian, delta_F);
-    }
-    else {
-        Eigen::PartialPivLU<Eigen::MatrixXcd> lu(hb_jacobian);
-        delta_xw = lu.solve(delta_F);
-    }
+        //Debug: 计时开始
+        //开始时间点
+        auto start_solveMNA = std::chrono::high_resolution_clock::now();
+        
+        // Eigen::VectorXcd delta_xw = hb_jacobian.fullPivLu().solve(delta_F);
+        //根据HB求解器设置选择LU实现
+        Eigen::VectorXcd delta_xw;
+        if (hb_params.hb_solver_method == HBLinearSolverMethod::MANUAL_LU) {
+            delta_xw = solve_lu_partial_pivot(hb_jacobian, delta_F);
+        }
+        else {
+            Eigen::PartialPivLU<Eigen::MatrixXcd> lu(hb_jacobian);
+            delta_xw = lu.solve(delta_F);
+        }
 
-    // Debug 或者直接获取秒
-    // 结束时间点
-    auto end_solveMNA = std::chrono::high_resolution_clock::now();
-    auto seconds = std::chrono::duration<double>(end_solveMNA - start_solveMNA).count();
-    std::cout << "求解jacobian矩阵耗时: " << seconds << " 秒" << std::endl;
+        // Debug 或者直接获取秒
+        // 结束时间点
+        auto end_solveMNA = std::chrono::high_resolution_clock::now();
+        auto seconds = std::chrono::duration<double>(end_solveMNA - start_solveMNA).count();
+        std::cout << "求解jacobian矩阵耗时: " << seconds << " 秒" << std::endl;
 
-    // //Debug:展示增量
-    // std::cout << "Delta_xw:\n" << delta_xw << "\n";
+        // //Debug:展示增量
+        // std::cout << "Delta_xw:\n" << delta_xw << "\n";
 
 
         hb_xw += delta_xw;
@@ -917,126 +879,6 @@ void solver::PSS_solve_harmonic_balance(){
         node_voltages(i) = hb_xt(i).real();
         //std::cout << "Steady-State Voltage at Node " << ckt.node_list[i +1] << ": " << node_voltages(i) << " V\n";
     }
-    // //Debug: 输出DFT和IDFT矩阵
-    // std::cout << "DFT Matrix:\n" << hb_DFT_matrix << "\n";
-    // std::cout << "IDFT Matrix:\n" << hb_iDFT_matrix << "\n";
-    // // Debug：自己构建一个频域解向量，测试IDFT变换
-    // Eigen::VectorXcd test_xw = Eigen::VectorXcd::Zero(base_size * (2*hb_params.num_harmonics+1));
-    // int i = 0;
-    //     for(int k = 0; k < (2*hb_params.num_harmonics+1); ++k){
-    //         if(k == 0 || k == 2*hb_params.num_harmonics)
-    //             test_xw(i + k * base_size) = std::complex<double>(0.5, 0.0); //最高频点余弦波 
-    //         else
-    //         test_xw(i + k * base_size) = std::complex<double>(0.0, 0.0); //简单测试值
-    //     }
-    //     i = 1;
-    //     for(int k = 0; k < (2*hb_params.num_harmonics+1); ++k){
-    //         if(k == hb_params.num_harmonics)
-    //             test_xw(i + k * base_size) = std::complex<double>(1.0, 0.0); //直流分量
-    //         else
-    //         test_xw(i + k * base_size) = std::complex<double>(0.0, 0.0); //简单测试值
-    //     }
-    //     std::cout << "Test DFT Input:\n" << test_xw << "\n";
-    // Eigen::VectorXcd test_xt = hb_iDFT(test_xw);
-    // std::cout << "Test IDFT Result:\n" << test_xt << "\n";
-    // //测试DFT变换
-    // Eigen::VectorXcd test_xw_back = hb_DFT(test_xt);
-    // std::cout << "Test DFT Result:\n" << test_xw_back << "\n";
-
-
-    // //Debug: 输出多频率点的线性MNA矩阵和J向量
-    // //输出到文件中查看
-    // std::ofstream file_Y("hb_MNA_Y.txt");
-    // if (file_Y.is_open()) {
-    //     file_Y << hb_MNA_Y << std::endl;
-    //     file_Y << hb_J << std::endl;
-    //     file_Y.close();
-    // } else {
-    //     std::cerr << "无法打开文件 hb_MNA_Y.txt 进行写入。" << std::endl;
-    // }
-
-    //打印需要打印的节点
-        //根据需要打印的变量，存到文件中
-        // {
-        //     // 输出文件: hb_print.txt
-        //         std::ofstream hdr("hb_print.txt", std::ios::out);
-        //         hdr << "Time(s)";
-        //         for (int node_id : ckt.print_node_ids) {
-        //             std::string name = "NODE";
-        //             if (node_id >= 0 && node_id < (int)ckt.node_list.size()) name = ckt.node_list[node_id];
-        //             hdr << "\tV(" << name << ")";
-        //         }
-        //         // //只需要遍历所有sources，按顺序输出支路电流表头
-        //         for (const auto &d : ckt.sources){
-        //             if (d.printI) hdr << "\tI(" << d.name << ")";
-        //         }
-        //         //关闭
-        //         hdr << "\n";
-        //         hdr.close();
-            
-
-        //     std::ofstream out("hb_print.txt", std::ios::app);
-        //     //遍历所有时域点，输出需要打印的节点电压和支路电流
-        //     int N = 2 * hb_params.num_harmonics + 1;
-        //     double T = 1.0 / (hb_params.fundamental_omega / (2.0 * M_PI)); //周期
-        //     double time = 0.0;
-        //     for(int n = 0; n < N; ++n){
-        //         time = n * T / N;
-        //         //提取节点电压
-        //         Eigen::VectorXd hb_node_voltages(ckt.node_list.size() -1);
-        //         for(int i = 0; i < (ckt.node_list.size() -1); ++i){
-        //             hb_node_voltages(i) = hb_xt(i + n * base_size).real();
-        //         }
-        //         //1215提取支路电流
-        //         Eigen::VectorXd branch_currents(ckt.sources.size());
-        //         for(int i = 0; i < ckt.sources.size(); ++i){
-        //             int branch_index = ckt.sources[i].branch_current_index + (ckt.node_list.size() -1);
-        //             branch_currents(i) = hb_xt(branch_index + n * base_size).real();
-        //         }
-        //         out << time;
-        //         for (int node_id : ckt.print_node_ids) {
-        //             double v = 0.0;
-        //             if (node_id == 0) v = 0.0;
-        //             else if (node_id - 1 >= 0 && node_id - 1 < hb_node_voltages.size()) v = hb_node_voltages[node_id - 1];
-        //             out << "\t" << v;
-        //         }
-        //         out << "\n";
-
-        //     //1215 电流
-        //     for (int current_dev_index : ckt.print_branch_current_indices) {
-        //         if(current_dev_index >=0 && current_dev_index < ckt.sources.size()){
-        //             out << "\t" << branch_currents[current_dev_index];
-        //         }
-        //     }
-        //     }
-
-        //     //打印频域结果
-        //     out << "\nFrequency Domain Results:\n";
-        //     out << "Harmonic\tFrequency(Hz)";
-        //     for (int node_id : ckt.print_node_ids) {
-        //         std::string name = "NODE";
-        //         if (node_id >= 0 && node_id < (int)ckt.node_list.size()) name = ckt.node_list[node_id];
-        //         out << "\tV(" << name << ")";
-        //     }
-        //     out << "\n";
-        //     for (int h = 0; h < N; ++h) {
-        //         Eigen::VectorXcd hb_node_vw(ckt.node_list.size() -1);
-        //         for(int i = 0; i < (ckt.node_list.size() -1); ++i){
-        //             hb_node_vw(i) = hb_xw(i + h * base_size);
-        //         }
-        //         out << h - hb_params.num_harmonics << "\t" << ((h - hb_params.num_harmonics) * (hb_params.fundamental_omega / (2.0 * M_PI)));
-        //         for (int node_id : ckt.print_node_ids) {
-        //             std::complex<double> v = 0.0;
-        //             if (node_id == 0) v = 0.0;
-        //             else if (node_id - 1 >= 0 && node_id - 1 < hb_xw.size()) v = hb_node_vw[node_id - 1];
-        //             out << "\t" << v;
-        //         }
-        //         out << "\n";
-        //     }
-
-        //     out << "\n";
-        //     out.close();
-        // }
 }
 
 
@@ -1154,13 +996,6 @@ void solver::print_hb_frequency_domain_results(){
             else if (node_id - 1 >= 0 && node_id - 1 < hb_node_vw.size()) v = hb_node_vw[node_id - 1];
             out << "\t" << v;
         }
-        // //打印支路电流
-        // for (int current_dev_index : ckt.print_branch_current_indices) {
-        //     if(current_dev_index >=0 && current_dev_index < ckt.sources.size()){
-        //         std::complex<double> i = hb_node_vw[current_dev_index + (ckt.node_list.size() -1)];
-        //         out << "\t" << i;
-        //     }
-        // }
         //打印支路电流
         for (int current_dev_index : ckt.print_branch_current_indices) {
             // //Debug:
