@@ -1,6 +1,7 @@
 #include "solver.hpp"
 #include "solver_internal.hpp"
 #include <chrono>
+#include <fstream>
 #include <iostream>
 #include <map>
 #include <string>
@@ -373,6 +374,36 @@ void solver::DC_solve(const Eigen::VectorXd& initial_node_voltages, bool in_tran
     //         std::cout << "Node " << node_name << " (ID " << node_id << "): " << node_voltages[node_id - 1] << " V\n";
     //     }
     // }
+}
+
+void solver::print_dc_results(){
+    std::ofstream out("dc_print_results.txt");
+    out << "DC";
+    for (int node_id : ckt.print_node_ids) {
+        std::string name = "NODE";
+        if (node_id >= 0 && node_id < (int)ckt.node_list.size()) {
+            name = ckt.node_list[node_id];
+        }
+        out << "\tV(" << name << ")";
+    }
+    for (const auto &d : ckt.sources){
+        if (d.printI) out << "\tI(" << d.name << ")";
+    }
+    out << "\n";
+
+    for (int node_id : ckt.print_node_ids) {
+        double v = 0.0;
+        if (node_id == 0) v = 0.0;
+        else if (node_id - 1 >= 0 && node_id - 1 < node_voltages.size()) v = node_voltages[node_id - 1];
+        out << "\t" << v;
+    }
+    for (int current_dev_index : ckt.print_branch_current_indices) {
+        if (current_dev_index >= 0 && current_dev_index < branch_currents.size()){
+            out << "\t" << branch_currents[current_dev_index];
+        }
+    }
+    out << "\n";
+    out.close();
 }
 
 

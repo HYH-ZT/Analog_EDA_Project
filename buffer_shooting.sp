@@ -25,3 +25,4 @@ C3 118 0 1e-12
 .PLOTNV 118
 .PLOTNV 107
 .PLOTNV I(VDD)
+.print shooting V(107) I(VDD)

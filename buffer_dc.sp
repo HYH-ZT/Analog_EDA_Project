@@ -21,7 +21,7 @@ C3 118 0 1e-12
 
 
 .dc
-
+.print dc V(107) I(VDD)
 .PLOTNV 101
 .PLOTNV 118
 .PLOTNV 107

@@ -73,6 +73,7 @@ int main(int argc, char* argv[]){
             for (int node_id : sol.get_plot_current_ids()){
                 sol.print_branch_current(node_id);
             }
+            sol.print_dc_results();
         }
         else if (analysis.type == "TRAN"){
             double tstep = analysis.parameters.count("tstep") ? analysis.parameters["tstep"] : 1e-9;
@@ -421,6 +422,7 @@ int main(int argc, char* argv[]){
             auto shooting_end = std::chrono::steady_clock::now();
             std::chrono::duration<double> shooting_elapsed = shooting_end - shooting_start;
             cout << "Shooting solve time (s): " << shooting_elapsed.count() << "\n";
+            sol.print_shooting_results();
 
             // // Debug: 输出要plot的节点ID
             // cout << "Nodes to plot:\n";

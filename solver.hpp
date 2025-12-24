@@ -224,6 +224,7 @@ class solver {
         }
         //打印瞬态结果
         void print_tran_results();
+        void print_dc_results();
         //稳态分析
         //HB相关变量
         HB_params hb_params;
@@ -236,6 +237,7 @@ class solver {
         void print_hb_time_domain_results();
         void print_hb_frequency_domain_results();
         void plot_hb_time_domain_results();
+        void print_shooting_results();
 
 
     //============================================

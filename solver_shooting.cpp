@@ -2,6 +2,7 @@
 #include "solver_internal.hpp"
 #include <algorithm>
 #include <cmath>
+#include <fstream>
 #include <iostream>
 #include <numeric>
 #include <stdexcept>
@@ -800,6 +801,7 @@ void solver::run_transient_and_record_common(double T, double tstep, const Eigen
     node_voltages.setZero();
     branch_currents.setZero();
     tran_plot_data.clear();
+    tran_print_data.clear();
 
     if (use_be) {
         set_state_from_x0_BE(x0_star);
@@ -824,6 +826,16 @@ void solver::run_transient_and_record_common(double T, double tstep, const Eigen
             if (idx < 0 || idx >= (int)branch_currents.size()) continue;
             double i = branch_currents[idx];
             tran_plot_data[-(idx + 1)].push_back({t, i});
+        }
+
+        for (int nid : ckt.print_node_ids) {
+            double v = (nid == 0) ? 0.0 : node_voltages[nid - 1];
+            tran_print_data[nid].push_back({t, v});
+        }
+        for (int idx : ckt.print_branch_current_indices) {
+            if (idx < 0 || idx >= (int)branch_currents.size()) continue;
+            double i = branch_currents[idx];
+            tran_print_data[-(idx + 1)].push_back({t, i});
         }
     }
     std::cout <<"\nresults:\n";
@@ -1066,6 +1078,40 @@ Eigen::VectorXd solver::propagate_one_period_BE(const Eigen::VectorXd& x0, doubl
 Eigen::VectorXd solver::compute_x0_by_prerun_BE(double T, double tstep, int N_pre_cycles)
 {
     return compute_x0_by_prerun_common(T, tstep, N_pre_cycles, true);
+}
+
+void solver::print_shooting_results(){
+    std::ofstream out("shooting_print_data.txt", std::ios::out);
+    out << "Time(s)";
+    for (const auto& pair : tran_print_data){
+        int id = pair.first;
+        if (id >= 0){
+            std::string name = "NODE";
+            if (id >= 0 && id < (int)ckt.node_list.size()) name = ckt.node_list[id];
+            out << "\tV(" << name << ")";
+        }
+        else{
+            int branch_index = -(id + 1);
+            std::string dev_name = "BRANCH";
+            if (branch_index >= 0 && branch_index < (int)ckt.sources.size()){
+                dev_name = ckt.sources[branch_index].name;
+            }
+            out << "\tI(" << dev_name << ")";
+        }
+    }
+    out << "\n";
+
+    if (!tran_print_data.empty()){
+        size_t data_size = tran_print_data.begin()->second.size();
+        for (size_t i = 0; i < data_size; ++i){
+            out << tran_print_data.begin()->second[i].first;
+            for (const auto& pair : tran_print_data){
+                out << "\t" << pair.second[i].second;
+            }
+            out << "\n";
+        }
+    }
+    out.close();
 }
 
 
