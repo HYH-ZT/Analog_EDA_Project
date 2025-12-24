@@ -79,8 +79,8 @@ Eigen::VectorXcd solve_lu_partial_pivot(const Eigen::MatrixXcd& A, const Eigen::
     }
     return x;
 }
-}
 
+}
 void solver::hb_build_linear_MNA(){
     //先对直流点构建线性MNA矩阵,只能进行一次，电感会贴出来很多个电压源
     // build_linear_MNA(false);
@@ -874,7 +874,8 @@ void solver::PSS_solve_harmonic_balance(){
     Eigen::VectorXcd delta_xw;
     if (hb_params.hb_solver_method == HBLinearSolverMethod::MANUAL_LU) {
         delta_xw = solve_lu_partial_pivot(hb_jacobian, delta_F);
-    } else {
+    }
+    else {
         Eigen::PartialPivLU<Eigen::MatrixXcd> lu(hb_jacobian);
         delta_xw = lu.solve(delta_F);
     }

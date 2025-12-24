@@ -136,8 +136,12 @@ int main(int argc, char* argv[]){
 
             //sol.TRAN_solve(tstop, tstep,ic_choice);
             //sol.TRAN_solve();
+            //开始计时
+            auto start_time = std::chrono::high_resolution_clock::now();
             sol.TRAN_solve(tstop, tstep, ic_choice);
-            cout << "Transient analysis completed.\n";
+            auto end_time = std::chrono::high_resolution_clock::now();
+            std::chrono::duration<double> elapsed = end_time - start_time;
+            cout << "Transient analysis completed in " << elapsed.count() << " seconds.\n";
             // //打印要观察的节点电压时间序列
             // for (const auto& tran_plot_pair : sol.get_tran_plot_data()){
             //     int node_id = tran_plot_pair.first;
@@ -147,6 +151,9 @@ int main(int argc, char* argv[]){
             //         cout << "Time: " << tv.first << " s, Voltage: " << tv.second << " V\n";
             //     }
             // }
+
+            //打印瞬态结果到文件
+            sol.print_tran_results();
 
             // 12.14 绘制要观察的节点电压波形和支路电流波形，要求画在一个窗口里，电流电压坐标轴独立
             plt::figure(1);

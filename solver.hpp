@@ -34,7 +34,7 @@ enum class SteadyStateMethod {
 // HB求解器选择
 enum class HBLinearSolverMethod {
     EIGEN_LU = 0,
-    MANUAL_LU = 1
+    MANUAL_LU = 1,
 };
 
 //HB相关参数
@@ -79,6 +79,8 @@ class solver {
         std::map<std::string, int> dynamic_device_current_map;
         //瞬态分析需要绘图的节点电压时间序列
         std::map<int, std::vector<std::pair<double, double>>> tran_plot_data; //节点ID -> (时间, 电压)对列表
+        //瞬态分析需要打印的节点电压时间序列
+        std::map<int, std::vector<std::pair<double, double>>> tran_print_data; //节点ID -> (时间, 电压)对列表
 
         //HB相关变量
         Eigen::VectorXcd hb_J; //HB电流源向量
@@ -216,6 +218,12 @@ class solver {
         const std::map<int, std::vector<std::pair<double, double>>>& get_tran_plot_data() const {
             return tran_plot_data;
         }
+        //获取瞬态打印数据
+        const std::map<int, std::vector<std::pair<double, double>>>& get_tran_print_data() const {
+            return tran_print_data;
+        }
+        //打印瞬态结果
+        void print_tran_results();
         //稳态分析
         //HB相关变量
         HB_params hb_params;
