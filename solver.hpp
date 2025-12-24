@@ -231,12 +231,10 @@ class solver {
         //设置HB初始频域解
         void HB_set_initial_xw();
         void HB_set_initial_xw_from_transient();
-        void PSS_solve();
         void PSS_solve_harmonic_balance();
         void PSS_solve_harmonic_balance(analysis& analysis, int ic_choice, int max_iters = 50, double tol = 1e-6);
         void print_hb_time_domain_results();
         void print_hb_frequency_domain_results();
-        void plot_hb_time_domain_results();
         void print_shooting_results();
 
 
@@ -262,7 +260,6 @@ class solver {
     void reset_dynamic_state_tr();
     void set_state_from_x0_tr(const Eigen::VectorXd& x0);
 
-    void TRAN_solve_new_new(double tstop, double tstep);    //测试瞬态
     void build_MNA_tran(double time);
 
     void stamp_linear_devices();

@@ -243,26 +243,8 @@ void solver::transient_step_tr(double time){
     update_inductor_state_tr();
 }
 
-//瞬态求解
-
-void solver::TRAN_solve_new_new(double tstop, double tstep){
-    parse_print_variables();
-    init_skeleton_tr(tstep);
-    node_voltages = Eigen::VectorXd::Zero(static_cast<int>(ckt.node_list.size()) - 1);
-    branch_currents.resize(0);
-
-    update_capacitor_rhs_tr();
-    update_inductor_rhs_tr();
-
-    DC_solve(node_voltages, true, 0.0);
-
-    init_transient_tr();
-
-    TRAN_solve_for_shooting_tr(tstop, tstep);
-}
 
 //瞬态主循环
-
 void solver::TRAN_solve_for_shooting_tr(double tstop, double tstep){
     int steps = static_cast<int>(tstop / tstep);
 
