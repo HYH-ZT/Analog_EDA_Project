@@ -18,9 +18,9 @@
                 "${fileDirname}\\${fileBasenameNoExtension}.exe",
 
                 "-I",
-                "F:\\Code\\Cpp\\EDA_Project\\Env\\eigen-5.0.0",
+                "${workspaceFolder}\\Env\\eigen-5.0.0",
                 "-I",
-                "F:\\Code\\Cpp\\EDA_Project\\Env\\matplotlib-cpp",
+                "${workspaceFolder}\\Env\\matplotlib-cpp",
                 "-I",
                 "C:\\Users\\hyh91\\AppData\\Local\\Programs\\Python\\Python313\\include",
                 "-I",
