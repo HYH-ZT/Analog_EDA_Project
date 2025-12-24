@@ -327,7 +327,7 @@ void solver::init_transient_tr()
 
 //外层调用函数
 
-void solver::PSS_solve_shooting_trapezoidal(double T, double tstep, int max_it, double tol)
+void solver::PSS_solve_shooting_trapezoidal(double T, double tstep, int max_it, double tol, int pre_run_cycles)
 {
     // ===== A) 一次性初始化（只做一次）=====
     parse_print_variables();
@@ -353,7 +353,10 @@ void solver::PSS_solve_shooting_trapezoidal(double T, double tstep, int max_it, 
     // for (int k = 0; k < m; ++k) x0[k] = cap_states[k].v_prev;
     // for (int k = 0; k < n; ++k) x0[m + k] = ind_states[k].i_prev;
 
-    int N_pre_cycles = 3;
+    int N_pre_cycles = pre_run_cycles;
+    if (N_pre_cycles < 0) {
+        N_pre_cycles = 3;
+    }
     Eigen::VectorXd x0 = compute_x0_by_prerun_tr(T, tstep, N_pre_cycles);
     Eigen::VectorXd V0 = node_voltages;
     Eigen::VectorXd I0 = branch_currents;
@@ -414,7 +417,7 @@ void solver::PSS_solve_shooting_trapezoidal(double T, double tstep, int max_it, 
 }
 
 
-void solver::PSS_solve_shooting_trapezoidal_sensitivity(double T, double tstep, int max_it, double tol)
+void solver::PSS_solve_shooting_trapezoidal_sensitivity(double T, double tstep, int max_it, double tol, int pre_run_cycles)
 {
     parse_print_variables();
 
@@ -430,7 +433,10 @@ void solver::PSS_solve_shooting_trapezoidal_sensitivity(double T, double tstep, 
     const int n = (int)ind_states.size();
     const int N = m + n;
 
-    int N_pre_cycles = 3;
+    int N_pre_cycles = pre_run_cycles;
+    if (N_pre_cycles < 0) {
+        N_pre_cycles = 3;
+    }
     Eigen::VectorXd x0 = compute_x0_by_prerun_tr(T, tstep, N_pre_cycles);
 
     if (N == 0) {
@@ -732,7 +738,8 @@ Eigen::VectorXd solver::compute_x0_by_prerun_common(double T, double tstep, int 
         std::cerr << "[pre-run] invalid T/tstep.\n";
         return x0;
     }
-    if (N_pre_cycles <= 0) N_pre_cycles = 1;
+    if (N_pre_cycles < 0) N_pre_cycles = 1;
+    if (N_pre_cycles == 0) return x0;
 
     int steps_per_cycle = (int)std::round(T / tstep);
     if (steps_per_cycle < 1) steps_per_cycle = 1;
@@ -1068,7 +1075,7 @@ void solver::run_transient_and_record_BE(double T, double tstep, const Eigen::Ve
 }
 
 
-void solver::PSS_solve_shooting_backward_euler(double T, double tstep, int max_it, double tol)
+void solver::PSS_solve_shooting_backward_euler(double T, double tstep, int max_it, double tol, int pre_run_cycles)
 {
     parse_print_variables();
 
@@ -1084,7 +1091,10 @@ void solver::PSS_solve_shooting_backward_euler(double T, double tstep, int max_i
     const int n = (int)ind_states_BE.size();
     const int N = m + n;
 
-    int N_pre_cycles = 0;
+    int N_pre_cycles = pre_run_cycles;
+    if (N_pre_cycles < 0) {
+        N_pre_cycles = 0;
+    }
     Eigen::VectorXd x0 = compute_x0_by_prerun_BE(T, tstep, N_pre_cycles);
     Eigen::VectorXd V0 = node_voltages;
     Eigen::VectorXd I0 = branch_currents;
@@ -1128,7 +1138,7 @@ void solver::PSS_solve_shooting_backward_euler(double T, double tstep, int max_i
 }
 
 
-void solver::PSS_solve_shooting_backward_euler_sensitivity(double T, double tstep, int max_it, double tol)
+void solver::PSS_solve_shooting_backward_euler_sensitivity(double T, double tstep, int max_it, double tol, int pre_run_cycles)
 {
     parse_print_variables();
 
@@ -1144,7 +1154,10 @@ void solver::PSS_solve_shooting_backward_euler_sensitivity(double T, double tste
     const int n = (int)ind_states_BE.size();
     const int N = m + n;
 
-    int N_pre_cycles = 0;
+    int N_pre_cycles = pre_run_cycles;
+    if (N_pre_cycles < 0) {
+        N_pre_cycles = 0;
+    }
     Eigen::VectorXd x0 = compute_x0_by_prerun_BE(T, tstep, N_pre_cycles);
 
     if (N == 0) {

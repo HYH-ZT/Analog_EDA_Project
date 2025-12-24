@@ -7,6 +7,7 @@
 #include "circuit.hpp"
 #include "parse_netlist.hpp"
 #include <cmath>
+#include <chrono>
 
 
 using namespace std;
@@ -59,7 +60,11 @@ int main(int argc, char* argv[]){
                     sol.setLinearSolverMethod(LinearSolverMethod::LU_DECOMPOSITION);
             }
             //解DC分析
+            auto dc_start = std::chrono::steady_clock::now();
             sol.DC_solve_ramp();
+            auto dc_end = std::chrono::steady_clock::now();
+            std::chrono::duration<double> dc_elapsed = dc_end - dc_start;
+            cout << "DC solve time (s): " << dc_elapsed.count() << "\n";
             //打印要观察的节点电压
             for (int node_id : sol.get_plot_node_ids()){
                 sol.print_node_voltage(node_id);
@@ -349,6 +354,38 @@ int main(int argc, char* argv[]){
 
             double period_T = 1.0 / freq;
             double tstep = period_T / N_sample; //默认时间步长为周期的1/1000
+            cout << "Select DC analysis method:\n";
+            cout << "1. Gauss Elimination\n";
+            cout << "2. LU Decomposition\n";
+            cout << "3. Manual LU\n";
+            cout << "4. Gauss-Jacobi Iteration\n";
+            cout << "5. Gauss-Seidel Iteration\n";
+            int dc_method_choice;
+            cin >> dc_method_choice;
+            switch (dc_method_choice){
+                case 1:
+                    sol.setLinearSolverMethod(LinearSolverMethod::GAUSS_ELIMINATION);
+                    break;
+                case 2:
+                    sol.setLinearSolverMethod(LinearSolverMethod::LU_DECOMPOSITION);
+                    break;
+                case 3:
+                    sol.setLinearSolverMethod(LinearSolverMethod::MANUAL_LU);
+                    break;
+                case 4:
+                    sol.setLinearSolverMethod(LinearSolverMethod::GAUSS_JACOBI);
+                    break;
+                case 5:
+                    sol.setLinearSolverMethod(LinearSolverMethod::GAUSS_SEIDEL);
+                    break;
+                default:
+                    cout << "Invalid choice, using LU Decomposition by default.\n";
+                    sol.setLinearSolverMethod(LinearSolverMethod::LU_DECOMPOSITION);
+            }
+
+            cout << "Enter pre-run cycles for SHOOTING (0 to skip): ";
+            int pre_run_cycles;
+            cin >> pre_run_cycles;
             cout << "Select the way of shooting method:\n";
             cout << "1. TR\n";
             cout << "2. BE\n";
@@ -356,23 +393,27 @@ int main(int argc, char* argv[]){
             cout << "4. TR_sensitivity\n";
             int method_choice;
             cin >> method_choice;
+            auto shooting_start = std::chrono::steady_clock::now();
             switch (method_choice){
                 case 1:
-                    sol.PSS_solve_shooting_trapezoidal(period_T, tstep, 100, 1e-9);
+                    sol.PSS_solve_shooting_trapezoidal(period_T, tstep, 100, 1e-9, pre_run_cycles);
                     break;
                 case 2:
-                    sol.PSS_solve_shooting_backward_euler(period_T, tstep, 100, 1e-9);
+                    sol.PSS_solve_shooting_backward_euler(period_T, tstep, 100, 1e-9, pre_run_cycles);
                     break;
                 case 3:
-                    sol.PSS_solve_shooting_backward_euler_sensitivity(period_T, tstep, 100, 1e-9);
+                    sol.PSS_solve_shooting_backward_euler_sensitivity(period_T, tstep, 100, 1e-9, pre_run_cycles);
                     break;
                 case 4:
-                    sol.PSS_solve_shooting_trapezoidal_sensitivity(period_T, tstep, 100, 1e-9);
+                    sol.PSS_solve_shooting_trapezoidal_sensitivity(period_T, tstep, 100, 1e-9, pre_run_cycles);
                     break;
                 default:
-                    cout << "Invalid choice, using LU Decomposition by default.\n";
-                    sol.setLinearSolverMethod(LinearSolverMethod::LU_DECOMPOSITION);
+                    cout << "Invalid choice, using trapezoidal by default.\n";
+                    sol.PSS_solve_shooting_trapezoidal(period_T, tstep, 100, 1e-9, pre_run_cycles);
             }
+            auto shooting_end = std::chrono::steady_clock::now();
+            std::chrono::duration<double> shooting_elapsed = shooting_end - shooting_start;
+            cout << "Shooting solve time (s): " << shooting_elapsed.count() << "\n";
 
             // // Debug: 输出要plot的节点ID
             // cout << "Nodes to plot:\n";

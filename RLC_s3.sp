@@ -20,8 +20,8 @@ C3 4 0 7.3e-6
 * Load capacitor
 Cl 4 0 10e-6
 
-
-.tran 0.004e-3 20e-3
+.shooting
+*.tran 0.004e-3 20e-3
 *.PROBE V(4)
 .print tran V(4) V(1)
 .plotnv 1 2 3 4 5
