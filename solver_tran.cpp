@@ -261,18 +261,6 @@ void solver::TRAN_solve(double tstop, double tstep,int use_initial_dc){
     }
     
 
-    // //Debug展示初始节点电压结果
-    // std::cout << "Initial Node Voltages for Transient Analysis:\n";
-    // for (const auto& pair : ckt.node_map){
-    //     const std::string& node_name = pair.first;
-    //     int node_id = pair.second;
-    //     if (node_id == 0){
-    //         std::cout << "Node " << node_name << " (ID " << node_id << "): 0 V (Ground)\n";
-    //     }
-    //     else{
-    //         std::cout << "Node " << node_name << " (ID " << node_id << "): " << node_voltages[node_id - 1] << " V\n";
-    //     }
-    // }
 
     //进行前向欧拉瞬态分析
     // double tstop = analysis_type.parameters["tstop"];
@@ -282,52 +270,14 @@ void solver::TRAN_solve(double tstop, double tstep,int use_initial_dc){
     tran_print_data.clear();
     for (int step = 0; step <= steps; ++step){
         double time = step * tstep;
-        // std::cout << "Transient Analysis Time: " << time << " s\n";
         //构建瞬态分析电路
         build_transient_ckt(tstep);
         
-        // //Debug: 输出当前电路的线性器件和源列表
-        // std::cout << "Linear Devices:\n";
-        // for (const auto& dev : ckt.linear_devices) {
-        //     std::cout << "  " << dev.name << " (" << dev.type << ") Nodes: ";
-        //     for (const auto& node_name : dev.node_names) {
-        //         std::cout << node_name << " ";
-        //     }
-        //     std::cout << " Parameters: ";
-        //     for (const auto& param : dev.parameters) {
-        //         std::cout << param.first << "=" << param.second << " ";
-        //     }
-        //     std::cout << "\n";
-        // }
-        // std::cout << "Sources:\n";
-        // for (const auto& dev : ckt.sources) {
-        //     std::cout << "  " << dev.name << " (" << dev.type << ") Nodes: ";
-        //     for (const auto& node_name : dev.node_names) {
-        //         std::cout << node_name << " ";
-        //     }
-        //     std::cout << " Parameters: ";
-        //     for (const auto& param : dev.parameters) {
-        //         std::cout << param.first << "=" << param.second << " ";
-        //     }
-        //     std::cout << "\n";
-        // }
 
         //直接调用DC求解器
         //求解非线性MNA方程，以上次节点电压为初值
         DC_solve(node_voltages, true, time);
 
-        // //Debug:展示节点电压结果
-        // std::cout << "Node Voltages at time " << time << " s:\n";
-        // for (const auto& pair : ckt.node_map){
-        //     const std::string& node_name = pair.first;
-        //     int node_id = pair.second;
-        //     if (node_id == 0){
-        //         std::cout << "Node " << node_name << " (ID " << node_id << "): 0 V (Ground)\n";
-        //     }
-        //     else{
-        //         std::cout << "Node " << node_name << " (ID " << node_id << "): " << node_voltages[node_id - 1] << " V\n";
-        //     }
-        // }
 
         //记录需要画图节点此时的电压
         for (auto plot_node_id : ckt.plot_node_ids){
@@ -335,17 +285,12 @@ void solver::TRAN_solve(double tstop, double tstep,int use_initial_dc){
             if (plot_node_id == 0) v = 0.0;
             else if (plot_node_id - 1 >= 0 && plot_node_id - 1 < node_voltages.size()) v = node_voltages[plot_node_id - 1];
             tran_plot_data[plot_node_id].push_back(std::make_pair(time, v));
-            //输出调试信息
-            //std::cout << "Plot Data - Time: " << time << " s, Node ID: " << plot_node_id << ", Voltage: " << v << " V\n";
         }
         //记录需要画图的支路电流
         for (auto plot_current_dev_index : ckt.plot_branch_current_indices){
             if (plot_current_dev_index >= 0 && plot_current_dev_index < branch_currents.size()){
                 double i = branch_currents[plot_current_dev_index];
                 tran_plot_data[-(plot_current_dev_index+1)].push_back(std::make_pair(time, i));
-                // //输出调试信息
-                // std::cout << "save current index" <<plot_current_dev_index+1 << "\n";
-                //std::cout << "Plot Data - Time: " << time << " s, Branch Index: " << plot_current_dev_index << ", Current: " << i << " A\n";
             }
         }
 
@@ -355,57 +300,16 @@ void solver::TRAN_solve(double tstop, double tstep,int use_initial_dc){
             if (print_node_id == 0) v = 0.0;
             else if (print_node_id - 1 >= 0 && print_node_id - 1 < node_voltages.size()) v = node_voltages[print_node_id - 1];
             tran_print_data[print_node_id].push_back(std::make_pair(time, v));
-            //输出调试信息
-            //std::cout << "Print Data - Time: " << time << " s, Node ID: " << print_node_id << ", Voltage: " << v << " V\n";
         }
         //记录需要打印的支路电流
         for (auto print_current_dev_index : ckt.print_branch_current_indices){
             if (print_current_dev_index >= 0 && print_current_dev_index < branch_currents.size()){
                 double i = branch_currents[print_current_dev_index];
                 tran_print_data[-(print_current_dev_index+1)].push_back(std::make_pair(time, i));
-                //输出调试信息
-                //std::cout << "Print Data - Time: " << time << " s, Branch Index: " << print_current_dev_index << ", Current: " << i << " A\n";
             }
         }
         
 
-        // //根据需要打印的变量，存到文件中
-        // {
-        //     // 输出文件: transient_print.txt
-        //     if (step == 0) {
-        //         std::ofstream hdr("transient_print.txt", std::ios::out);
-        //         hdr << "Time(s)";
-        //         for (int node_id : ckt.print_node_ids) {
-        //             std::string name = "NODE";
-        //             if (node_id >= 0 && node_id < (int)ckt.node_list.size()) name = ckt.node_list[node_id];
-        //             hdr << "\tV(" << name << ")";
-        //         }
-        //         //只需要遍历所有sources，按顺序输出支路电流表头
-        //         for (const auto &d : ckt.sources){
-        //             if (d.printI) hdr << "\tI(" << d.name << ")";
-        //         }
-        //         //关闭
-        //         hdr << "\n";
-        //         hdr.close();
-        //     }
-
-        //     std::ofstream out("transient_print.txt", std::ios::app);
-        //     out << time;
-        //     for (int node_id : ckt.print_node_ids) {
-        //         double v = 0.0;
-        //         if (node_id == 0) v = 0.0;
-        //         else if (node_id - 1 >= 0 && node_id - 1 < node_voltages.size()) v = node_voltages[node_id - 1];
-        //         out << "\t" << v;
-        //     }
-        //     for (int current_dev_index : ckt.print_branch_current_indices) {
-        //         if (current_dev_index >= 0 && current_dev_index < branch_currents.size()){
-        //             out << "\t" << branch_currents[current_dev_index];
-        //         }
-        //     }
-
-        //     out << "\n";
-        //     out.close();
-        // }
 
 
     }
